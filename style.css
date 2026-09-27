@@ -1,0 +1,30 @@
+:root {
+  --bg: #ffffff; --fg: #111827; --muted: #6b7280; --border: #e5e7eb;
+  --accent: #2563eb; --accent-fg: #ffffff; --field: #f9fafb; --danger: #dc2626; --ok: #16a34a;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111827; --fg: #f3f4f6; --muted: #9ca3af; --border: #374151; --field: #1f2937; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif; }
+h1 { font-size: 18px; margin: 0 0 4px; }
+h2 { font-size: 14px; margin: 24px 0 8px; }
+label { display: block; font-weight: 600; margin: 10px 0 4px; }
+.hint { color: var(--muted); font-size: 12px; font-weight: normal; }
+input[type=text], input[type=email], input[type=password], input[type=url], textarea, select {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--field); color: var(--fg); font: inherit;
+}
+textarea { resize: vertical; min-height: 80px; }
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button {
+  padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--field); color: var(--fg); font: inherit; cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; align-items: center; }
+.check { display: flex; gap: 8px; align-items: center; font-weight: normal; }
+.status { min-height: 18px; font-size: 12px; }
+.status.ok { color: var(--ok); } .status.err { color: var(--danger); }
+code { background: var(--field); padding: 1px 4px; border-radius: 4px; }

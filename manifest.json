@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Quick Email Sender",
+  "version": "1.0.0",
+  "description": "선택한 텍스트/링크/페이지를 등록된 이메일 주소(최대 5개)로 빠르게 보냅니다.",
+  "permissions": ["storage", "contextMenus", "notifications", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://api.resend.com/*", "https://api.sendgrid.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": false }
+  ],
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

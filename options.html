@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Quick Email Sender 설정</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    main { max-width: 680px; margin: 0 auto; padding: 24px 16px 64px; }
+    .recipient { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 8px; margin-bottom: 8px; }
+    .api-only { display: none; }
+    body.api .api-only { display: block; }
+    body.webhook .webhook-only { display: block; }
+    .webhook-only { display: none; }
+    .save-bar { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; border-top: 1px solid var(--border); margin-top: 24px; }
+    @media (max-width: 520px) { .recipient { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Quick Email Sender 설정</h1>
+  <p class="hint">변경 후 하단의 저장 버튼을 누르세요.</p>
+
+  <h2>수신 이메일 (최대 5개)</h2>
+  <div id="recipients"></div>
+  <button id="addRecipient">+ 수신자 추가</button>
+
+  <h2>템플릿</h2>
+  <p class="hint">변수: <code>{{page_title}}</code> <code>{{page_url}}</code> <code>{{selected_text}}</code> <code>{{link_url}}</code> <code>{{timestamp}}</code></p>
+  <label for="subjectTemplate">제목 템플릿</label>
+  <input type="text" id="subjectTemplate">
+  <label for="bodyTemplate">본문 템플릿</label>
+  <textarea id="bodyTemplate" rows="6"></textarea>
+
+  <h2>전송 방식</h2>
+  <select id="sendMode">
+    <option value="gmail">Gmail 작성창 열기 (추천 — 설정 불필요)</option>
+    <option value="outlook">Outlook.com 작성창 열기</option>
+    <option value="mailto">PC 기본 메일 앱 열기 (mailto — Windows 기본 메일 앱 지정 필요)</option>
+    <option value="resend">Resend API로 즉시 전송</option>
+    <option value="sendgrid">SendGrid API로 즉시 전송</option>
+    <option value="webhook">Webhook (직접 만든 백엔드)으로 전송</option>
+  </select>
+
+  <div class="api-only">
+    <label for="apiKey">API 키 <span class="hint">(Webhook은 선택 — Bearer 헤더로 전송. 이 기기에만 저장됨)</span></label>
+    <input type="password" id="apiKey" autocomplete="off">
+    <label for="fromEmail">발신자 이메일 <span class="hint">(Resend/SendGrid에서 인증된 주소)</span></label>
+    <input type="email" id="fromEmail" placeholder="notes@yourdomain.com">
+    <div class="webhook-only">
+      <label for="webhookUrl">Webhook URL <span class="hint">JSON { to, from, subject, text, sentAt } 를 POST</span></label>
+      <input type="url" id="webhookUrl" placeholder="https://example.com/hooks/email">
+    </div>
+  </div>
+
+  <h2>동작</h2>
+  <label class="check"><input type="checkbox" id="notify"> 전송 완료 알림 표시 (실패 알림은 항상 표시)</label>
+  <label class="check"><input type="checkbox" id="contextMenu"> 우클릭 메뉴에 "이메일로 보내기" 표시</label>
+
+  <div class="save-bar row">
+    <button class="primary" id="save">저장</button>
+    <button id="test">모든 수신자에게 테스트 전송</button>
+    <span class="status" id="status"></span>
+  </div>
+</main>
+<script type="module" src="options.js"></script>
+</body>
+</html>

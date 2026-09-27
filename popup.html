@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { width: 380px; padding: 14px; }
+    #recipients { border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; }
+    .recipient { margin: 0; padding: 6px 10px; cursor: pointer; }
+    .recipient + .recipient { border-top: 1px solid var(--border); }
+    .recipient:hover { background: var(--field); }
+    .top { display: flex; justify-content: space-between; align-items: center; }
+    .mode { font-size: 11px; color: var(--muted); }
+    #empty { display: none; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; text-align: center; }
+    footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+    a { color: var(--accent); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1>Quick Email</h1>
+    <span class="mode" id="mode"></span>
+  </div>
+
+  <div id="empty">등록된 수신자가 없습니다.<br><a id="goOptions">설정에서 이메일을 추가하세요</a></div>
+
+  <div id="main">
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <label class="check" style="margin:0"><input type="checkbox" id="checkAll"> <b>받는 사람</b></label>
+      <span class="hint" id="count"></span>
+    </div>
+    <div id="recipients"></div>
+
+    <label for="subject">제목</label>
+    <input type="text" id="subject">
+
+    <label for="body">본문</label>
+    <textarea id="body" rows="8"></textarea>
+
+    <footer>
+      <a id="openOptions">설정</a>
+      <div class="row">
+        <span class="status" id="status"></span>
+        <button class="primary" id="send">전송</button>
+      </div>
+    </footer>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
