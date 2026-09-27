@@ -1,4 +1,4 @@
-import { fetchAllAccounts, inboxUrl } from './inbox.js';
+import { fetchAllAccounts, inboxUrl, accountsDiag } from './inbox.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -52,7 +52,7 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
   if (changes.recipients || changes.contextMenu) rebuildMenus();
-  if (changes.inboxCheck || changes.inboxInterval) scheduleInbox();
+  if (changes.inboxCheck || changes.inboxInterval || changes.extraAccounts) scheduleInbox();
 });
 
 // ---------- 받은편지함 확인 ----------
@@ -81,7 +81,7 @@ async function checkInbox() {
   if (!s.inboxCheck) return { ok: false, error: '받은편지함 확인이 꺼져 있습니다.' };
   const { accounts: prev, seenIds = [] } = await chrome.storage.local.get(['accounts', 'seenIds']);
   try {
-    const accounts = await fetchAllAccounts();
+    const accounts = await fetchAllAccounts(s.extraAccounts);
     const seen = new Set(seenIds);
     for (const a of accounts) {
       const fresh = a.entries.filter((e) => !seen.has(e.id));
@@ -93,6 +93,7 @@ async function checkInbox() {
     await chrome.storage.local.set({
       accounts,
       inboxError: null,
+      accountsDiag,
       seenIds: [...new Set([...seenIds, ...allIds])].slice(-500),
     });
     const total = accounts.reduce((n, a) => n + a.count, 0);

@@ -62,10 +62,13 @@ function collect() {
   for (const k of ['apiKey', 'fromEmail', 'webhookUrl']) out[k] = out[k].trim();
   for (const k of CHECK_FIELDS) out[k] = $(k).checked;
   for (const k of NUMBER_FIELDS) out[k] = Number($(k).value);
+  out.extraAccounts = $('extraAccounts').value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
   return out;
 }
 
 function validate(s) {
+  const badAcct = s.extraAccounts.find((e) => !isValidEmail(e));
+  if (badAcct) return `잘못된 계정 주소: "${badAcct}"`;
   const bad = s.recipients.find((r) => !isValidEmail(r.email));
   if (bad) return `잘못된 이메일 주소: "${bad.email || '(빈 칸)'}"`;
   if (s.sendMode === 'resend' || s.sendMode === 'sendgrid') {
@@ -109,6 +112,7 @@ async function init() {
   for (const k of TEXT_FIELDS) $(k).value = s[k] ?? '';
   for (const k of CHECK_FIELDS) $(k).checked = !!s[k];
   for (const k of NUMBER_FIELDS) $(k).value = String(s[k]);
+  $('extraAccounts').value = (s.extraAccounts || []).join('\n');
   if (!recipients.length) recipients.push({ name: '', email: '' });
   renderRecipients();
   updateModeClass();

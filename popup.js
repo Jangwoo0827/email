@@ -15,6 +15,7 @@ const AVATAR_COLORS = ['#2563eb', '#16a34a', '#db2777', '#ea580c', '#7c3aed'];
 let settings;
 let accounts = []; // [{ index, email, count, entries, checkedAt }]
 let inboxError = null;
+let accountsDiag = '';
 let current = 0; // 선택된 계정의 Gmail 순번 (u/N)
 let activeTabId;
 
@@ -51,11 +52,11 @@ function renderAccounts() {
       textContent: inboxError ? 'Chrome에서 Gmail에 로그인하세요.' : '계정 찾는 중…',
     }));
   }
-  for (const a of accounts) {
+  accounts.forEach((a, pos) => {
     const b = document.createElement('button');
     b.className = 'acct' + (a.index === current ? ' active' : '');
     b.title = a.email;
-    b.innerHTML = '<span class="avatar"></span><span class="info"><div class="email"></div><div class="hint"></div></span><span class="badge"></span>';
+    b.innerHTML = '<span class="avatar"></span><span class="info"><span class="email"></span><span class="hint"></span></span><span class="badge"></span>';
     const av = b.querySelector('.avatar');
     if (a.photo) {
       const img = document.createElement('img');
@@ -66,14 +67,20 @@ function renderAccounts() {
     } else {
       av.textContent = (a.name || a.email)[0].toUpperCase();
     }
-    av.style.background = AVATAR_COLORS[a.index % AVATAR_COLORS.length];
+    av.style.background = AVATAR_COLORS[pos % AVATAR_COLORS.length];
     b.querySelector('.email').textContent = a.name || a.email.split('@')[0];
     const hint = b.querySelector('.hint');
     hint.textContent = a.error ? '다시 로그인 필요' : a.email;
     hint.classList.toggle('err', !!a.error);
-    b.querySelector('.badge').textContent = a.count ? String(a.count) : '';
+    b.querySelector('.badge').textContent = a.count ? (a.count > 999 ? '999+' : String(a.count)) : '';
     b.addEventListener('click', () => selectAccount(a.index));
     box.append(b);
+  });
+  if (accountsDiag) {
+    const d = document.createElement('div');
+    d.className = 'diag';
+    d.textContent = `ⓘ ${accountsDiag} — 빠진 계정은 설정 > "계정 직접 추가"에 입력하세요.`;
+    box.append(d);
   }
 }
 
@@ -139,7 +146,8 @@ function renderInbox() {
 }
 
 async function loadAccounts() {
-  const s = await chrome.storage.local.get(['accounts', 'inboxError']);
+  const s = await chrome.storage.local.get(['accounts', 'inboxError', 'accountsDiag']);
+  accountsDiag = s.accountsDiag || '';
   accounts = s.accounts || [];
   inboxError = s.inboxError || null;
   // 선택했던 계정이 로그아웃되었으면 첫 계정으로

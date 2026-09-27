@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   inboxCheck: true, // Gmail 받은편지함 새 메일 확인
   inboxInterval: 5, // 분
   inboxNotify: true, // 새 메일 알림
+  extraAccounts: [], // 자동으로 안 잡히는 Gmail 계정 직접 추가
   gmailAccount: 0, // 팝업 왼쪽에서 선택한 Gmail 계정 순번 (/mail/u/N) — 보내기/받은편지함 모두 사용
   sendMode: 'gmail', // 'gmail' | 'outlook' | 'mailto' | 'resend' | 'sendgrid' | 'webhook'
 };
@@ -70,7 +71,7 @@ export function buildComposeUrl(mode, to, subject, body, account = 0) {
   const enc = encodeURIComponent;
   const list = to.join(',');
   if (mode === 'gmail') {
-    return `https://mail.google.com/mail/u/${account}/?view=cm&fs=1&to=${enc(list)}&su=${enc(subject)}&body=${enc(body)}`;
+    return `https://mail.google.com/mail/u/${enc(String(account))}/?view=cm&fs=1&to=${enc(list)}&su=${enc(subject)}&body=${enc(body)}`;
   }
   if (mode === 'outlook') {
     return `https://outlook.live.com/mail/0/deeplink/compose?to=${enc(list)}&subject=${enc(subject)}&body=${enc(body)}`;

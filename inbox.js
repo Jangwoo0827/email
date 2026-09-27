@@ -12,11 +12,11 @@ const decode = (s = '') =>
 const tag = (xml, name) => decode((new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`).exec(xml) || [])[1]);
 
 export function inboxUrl(account = 0) {
-  return `https://mail.google.com/mail/u/${account}/#inbox`;
+  return `https://mail.google.com/mail/u/${u(account)}/#inbox`;
 }
 
 export async function fetchInbox(account = 0) {
-  const res = await fetch(`https://mail.google.com/mail/u/${account}/feed/atom`, {
+  const res = await fetch(`https://mail.google.com/mail/u/${u(account)}/feed/atom`, {
     credentials: 'include',
     cache: 'no-store',
   });
@@ -46,58 +46,101 @@ export async function fetchInbox(account = 0) {
   };
 }
 
-// Chrome(브라우저)에 로그인된 Google 계정 목록 — Google 계정 전환 메뉴와 같은 순서(= /mail/u/N 순번)
+// account: 순번(0,1,…) 또는 이메일 주소 — Gmail은 /mail/u/<이메일>/ 형식도 지원
+const u = (account) => encodeURIComponent(String(account));
+
+// 마지막 계정 목록 조회 진단 메시지 (팝업에 표시)
+export let accountsDiag = '';
+
+// Chrome에 로그인된 Google 계정 목록 (계정 전환 메뉴와 같은 목록)
 async function listGoogleAccounts() {
+  const urls = [
+    'https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard',
+    'https://accounts.google.com/ListAccounts?json=standard&source=ogb&listPages=0',
+  ];
+  const errors = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) {
+        errors.push(`HTTP ${res.status}`);
+        continue;
+      }
+      const text = (await res.text()).replace(/^\)\]\}'\s*/, ''); // XSSI 방지 접두사 제거
+      const data = JSON.parse(text);
+      const rows = Array.isArray(data?.[1]) ? data[1] : [];
+      const list = rows
+        .filter(Array.isArray)
+        .map((r) => ({
+          email: r.find((v) => typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)),
+          name: typeof r[2] === 'string' ? r[2] : '',
+          photo: typeof r[4] === 'string' && r[4].startsWith('http') ? r[4] : '',
+        }))
+        .filter((x) => x.email);
+      if (list.length) return list;
+      errors.push('빈 목록');
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  accountsDiag = `계정 목록 읽기 실패 (${errors.join(', ')})`;
+  return null;
+}
+
+// 이메일 경로로 먼저, 안 되면 순번으로
+async function fetchFor(email, index) {
   try {
-    const res = await fetch('https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard', {
-      credentials: 'include',
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const data = JSON.parse(await res.text());
-    const rows = Array.isArray(data?.[1]) ? data[1] : [];
-    const list = rows
-      .map((r) => ({
-        email: r.find((v) => typeof v === 'string' && /^[^\s@]+@[^\s@]+$/.test(v)),
-        name: typeof r[2] === 'string' ? r[2] : '',
-        photo: typeof r[4] === 'string' && r[4].startsWith('http') ? r[4] : '',
-      }))
-      .filter((a) => a.email);
-    return list.length ? list : null;
-  } catch {
-    return null;
+    const inbox = await fetchInbox(email);
+    if (!inbox.account || inbox.account.toLowerCase() === email.toLowerCase()) return { key: email, inbox };
+  } catch { /* 순번으로 재시도 */ }
+  if (index != null) {
+    const inbox = await fetchInbox(index);
+    if (inbox.account.toLowerCase() === email.toLowerCase()) return { key: index, inbox };
+    throw new Error('이 계정의 Gmail 세션을 찾을 수 없습니다.');
+  }
+  throw new Error('Gmail에 로그인되어 있지 않습니다.');
+}
+
+async function checkOne(acc, index) {
+  try {
+    const { key, inbox } = await fetchFor(acc.email, index);
+    return { ...acc, ...inbox, index: key, email: acc.email, error: null };
+  } catch (e) {
+    return { ...acc, index: acc.email, count: 0, entries: [], checkedAt: Date.now(), error: e.message };
   }
 }
 
-// 로그인된 모든 계정의 받은편지함 확인. 한 계정이 실패해도 목록에서 빠지지 않고 error로 표시
-export async function fetchAllAccounts(max = 10) {
-  const known = await listGoogleAccounts();
+// 로그인된 모든 계정의 받은편지함 확인. 실패한 계정도 목록에 남기고 error로 표시
+// extraEmails: 설정에서 직접 추가한 계정
+export async function fetchAllAccounts(extraEmails = []) {
+  accountsDiag = '';
+  let known = await listGoogleAccounts();
+  let accounts;
   if (known) {
-    return Promise.all(
-      known.slice(0, max).map(async (acc, index) => {
-        try {
-          const inbox = await fetchInbox(index);
-          return { index, ...acc, ...inbox, email: acc.email, error: null };
-        } catch (e) {
-          return { index, ...acc, count: 0, entries: [], checkedAt: Date.now(), error: e.message };
+    accounts = await Promise.all(known.slice(0, 10).map((acc, i) => checkOne(acc, i)));
+  } else {
+    // 목록을 못 읽으면 u/0 … u/9 를 시도 (없는 번호는 u/0으로 돌아와 중복 → 건너뜀)
+    accounts = [];
+    let misses = 0;
+    for (let i = 0; i < 10 && misses < 3; i++) {
+      try {
+        const inbox = await fetchInbox(i);
+        if (accounts.some((a) => a.email === inbox.account)) {
+          misses++;
+          continue;
         }
-      }),
-    );
-  }
-
-  // 계정 목록을 못 가져오면 u/0, u/1 … 을 차례로 시도
-  // (없는 번호는 Gmail이 u/0으로 돌려보내므로 이메일이 중복되면 건너뜀)
-  const accounts = [];
-  let failures = 0;
-  for (let i = 0; i < 6 && failures < 2; i++) {
-    try {
-      const inbox = await fetchInbox(i);
-      if (accounts.some((a) => a.email === inbox.account)) continue;
-      accounts.push({ index: i, email: inbox.account, ...inbox, error: null });
-    } catch (e) {
-      failures++;
+        accounts.push({ ...inbox, index: i, email: inbox.account, name: '', photo: '', error: null });
+      } catch {
+        misses++;
+      }
     }
   }
-  if (!accounts.length) throw new Error('Gmail에 로그인되어 있지 않습니다.');
+  const have = new Set(accounts.map((a) => a.email.toLowerCase()));
+  for (const email of extraEmails) {
+    if (!email || have.has(email.toLowerCase())) continue;
+    have.add(email.toLowerCase());
+    accounts.push(await checkOne({ email, name: '', photo: '' }, null));
+  }
+  if (!accounts.length) throw new Error(accountsDiag || 'Gmail에 로그인되어 있지 않습니다.');
   return accounts;
 }
