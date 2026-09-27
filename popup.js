@@ -1,5 +1,5 @@
 import { inboxUrl } from './inbox.js';
-import { listMessages, getMessage, markRead, sendMessage } from './gmail.js';
+import { listMessages, getMessage, markRead, markAllRead, sendMessage } from './gmail.js';
 import { loadSettings, buildMail, isValidEmail, saveSettings, COMPOSE_MODES, gmailWebUrl } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
@@ -137,6 +137,7 @@ function renderInbox() {
   $('unread').textContent = a?.count ? String(a.count) : '';
   renderBanner(a);
   $('filter').hidden = !isApi(a);
+  $('markAll').hidden = !isApi(a) || !a.count;
   if (!settings.inboxCheck) {
     list.textContent = '';
     $('inboxInfo').textContent = '';
@@ -278,6 +279,28 @@ async function openReader(a, it) {
   } catch (e) {
     $('rMeta').textContent = `⚠ ${e.message}`;
   }
+}
+
+async function onMarkAll() {
+  const a = currentAccount();
+  if (!isApi(a)) return;
+  if (!confirm(`${a.email}의 안 읽은 메일 ${a.count}통을 모두 읽음으로 표시할까요?`)) return;
+  const btn = $('markAll');
+  btn.disabled = true;
+  btn.textContent = '처리 중…';
+  try {
+    const n = await markAllRead(a.email, (done) => (btn.textContent = `${done}통 처리…`));
+    a.count = 0;
+    for (const k of Object.keys(apiCache)) if (k.startsWith(`${a.email}|`)) delete apiCache[k];
+    $('inboxInfo').textContent = `${a.email} · ${n}통을 읽음으로 표시했습니다`;
+    renderAccounts();
+    renderInbox();
+    chrome.runtime.sendMessage({ type: 'CHECK_INBOX' }); // 배지 갱신
+  } catch (e) {
+    $('inboxInfo').textContent = `⚠ ${e.message}`;
+  }
+  btn.disabled = false;
+  btn.textContent = '전체 읽음';
 }
 
 function closeReader(redraw = true) {
@@ -497,6 +520,7 @@ async function init() {
   });
   $('filter').addEventListener('change', () => renderInbox());
   $('back').addEventListener('click', () => closeReader());
+  $('markAll').addEventListener('click', onMarkAll);
   $('reply').addEventListener('click', startReply);
   $('openInGmail').addEventListener('click', () => {
     if (openMsg) chrome.tabs.create({ url: gmailWebUrl(openMsg.account, '', `#all/${openMsg.id}`) });

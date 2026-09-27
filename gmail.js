@@ -214,3 +214,22 @@ export async function sendMessage(email, { to, cc = [], subject, body, threadId,
   const raw = btoa(mime).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   return api(email, '/messages/send', { method: 'POST', body: JSON.stringify(threadId ? { raw, threadId } : { raw }) });
 }
+
+// 받은편지함의 안 읽은 메일 전부 읽음 처리 (batchModify는 한 번에 최대 1000개)
+export async function markAllRead(email, onProgress) {
+  let done = 0;
+  const handled = new Set();
+  for (;;) {
+    const list = await api(email, `/messages?maxResults=500&q=${encodeURIComponent('in:inbox is:unread')}`);
+    // 검색 색인이 늦게 갱신돼 방금 처리한 메일이 다시 나올 수 있으므로 제외 (무한 반복 방지)
+    const ids = (list.messages || []).map((m) => m.id).filter((id) => !handled.has(id));
+    if (!ids.length) return done;
+    ids.forEach((id) => handled.add(id));
+    await api(email, '/messages/batchModify', {
+      method: 'POST',
+      body: JSON.stringify({ ids, removeLabelIds: ['UNREAD'] }),
+    });
+    done += ids.length;
+    onProgress?.(done);
+  }
+}
