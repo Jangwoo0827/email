@@ -1,4 +1,4 @@
-import { inboxUrl } from './inbox.js';
+import { inboxUrl, fetchMessageBody } from './inbox.js';
 import { listMessages, getMessage, markRead, markAllRead, sendMessage } from './gmail.js';
 import { loadSettings, buildMail, isValidEmail, saveSettings, COMPOSE_MODES, gmailWebUrl } from './shared.js';
 
@@ -166,10 +166,10 @@ function renderInbox() {
     list.append(msg('안 읽은 메일이 없습니다 🎉'));
     return;
   }
-  // 연결 전: 미리보기만 가능, 클릭하면 Gmail 탭으로
+  // 연결 안 된 계정: 로그인 세션으로 본문 읽기 (OAuth 불필요, 비공식)
   for (const e of a.entries) {
     const el = mailRow({ from: e.from, fromEmail: e.fromEmail, time: e.issued, subject: e.title, summary: e.summary, unread: true });
-    el.addEventListener('click', () => chrome.tabs.create({ url: e.link }));
+    el.addEventListener('click', () => openSessionReader(a, e));
     list.append(el);
   }
 }
@@ -303,6 +303,38 @@ async function onMarkAll() {
   btn.textContent = '전체 읽음';
 }
 
+async function openSessionReader(a, e) {
+  $('listPane').hidden = true;
+  $('readerPane').hidden = false;
+  $('rSubject').textContent = e.title;
+  $('rMeta').textContent = `${e.from}${e.fromEmail ? ` <${e.fromEmail}>` : ''} · ${new Date(Date.parse(e.issued) || Date.now()).toLocaleString()}`;
+  $('rAttach').textContent = '불러오는 중…';
+  clearMailBody();
+  openMsg = {
+    session: true,
+    id: e.id,
+    link: e.link,
+    account: a.index,
+    subject: e.title,
+    from: e.fromEmail ? `${e.from} <${e.fromEmail}>` : e.from,
+    date: Date.parse(e.issued) || Date.now(),
+    text: e.summary,
+    html: '',
+  };
+  try {
+    const body = await fetchMessageBody(a.index, e);
+    if (openMsg?.id !== e.id) return;
+    openMsg.html = body.html;
+    openMsg.text = body.text;
+    $('rAttach').textContent = '';
+    renderMailBody({ html: body.html, text: body.text });
+  } catch (err) {
+    if (openMsg?.id !== e.id) return;
+    $('rAttach').textContent = `⚠ ${err.message} 미리보기만 표시합니다. 전체 내용은 "Gmail에서 열기"를 누르세요.`;
+    renderMailBody({ text: e.summary });
+  }
+}
+
 function closeReader(redraw = true) {
   openMsg = null;
   $('readerPane').hidden = true;
@@ -318,13 +350,13 @@ function htmlToText(html) {
 
 function startReply() {
   const m = openMsg;
-  if (!m?.messageId) return;
+  if (!m) return;
   const src = m.replyTo || m.from;
   $('to').value = (/<([^>]+)>/.exec(src) || [])[1] || src.trim();
   $('subject').value = /^re:/i.test(m.subject) ? m.subject : `Re: ${m.subject}`;
   const quoted = (m.text || htmlToText(m.html)).split(/\r?\n/).map((l) => `> ${l}`).join('\n');
   $('body').value = `\n\n${new Date(m.date).toLocaleString()}, ${m.from} 작성:\n${quoted}`;
-  replyCtx = { threadId: m.threadId, inReplyTo: m.messageId, references: m.references };
+  replyCtx = m.messageId ? { threadId: m.threadId, inReplyTo: m.messageId, references: m.references } : null;
   $('replyText').textContent = `답장: ${m.subject}`;
   $('replyInfo').hidden = false;
   showView('sendView');
@@ -523,7 +555,9 @@ async function init() {
   $('markAll').addEventListener('click', onMarkAll);
   $('reply').addEventListener('click', startReply);
   $('openInGmail').addEventListener('click', () => {
-    if (openMsg) chrome.tabs.create({ url: gmailWebUrl(openMsg.account, '', `#all/${openMsg.id}`) });
+    if (!openMsg) return;
+    const url = openMsg.session ? openMsg.link : gmailWebUrl(openMsg.account, '', `#all/${openMsg.id}`);
+    chrome.tabs.create({ url });
   });
   $('connectBtn').addEventListener('click', () => {
     const a = currentAccount();

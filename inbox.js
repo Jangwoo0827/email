@@ -104,3 +104,65 @@ export async function fetchAllAccounts(extraEmails = []) {
   if (!accounts.length) throw new Error('Gmail에 로그인되어 있지 않습니다.');
   return accounts;
 }
+
+// ---------- OAuth 없이 본문 읽기 (비공식: Gmail 로그인 세션 + "인쇄 보기" 페이지) ----------
+// Gmail 구조가 바뀌면 동작하지 않을 수 있음 → 실패하면 호출한 쪽에서 Gmail 탭으로 안내
+
+const ikCache = {};
+
+// Gmail 페이지에 들어 있는 계정 키(ik). 인쇄 보기 요청에 필요
+async function getIk(account) {
+  if (ikCache[account]) return ikCache[account];
+  const res = await fetch(gmailWebUrl(account), { credentials: 'include', cache: 'no-store' });
+  const html = await res.text();
+  const m =
+    /GLOBALS=\[(?:[^,\]]*,){9}"([0-9a-f]{6,16})"/.exec(html) ||
+    /[?&]ik=([0-9a-f]{6,16})/.exec(html) ||
+    /"ik"\s*:\s*"([0-9a-f]{6,16})"/.exec(html);
+  if (!m) throw new Error('Gmail 계정 키를 찾지 못했습니다.');
+  ikCache[account] = m[1];
+  return m[1];
+}
+
+// entry: fetchInbox()의 메일 항목 ({ id: 'tag:gmail.google.com,2004:<10진수>', link: '...message_id=<16진수>...' })
+export async function fetchMessageBody(account, entry) {
+  const dec = (/:(\d+)$/.exec(entry.id) || [])[1];
+  const hex = (/message_id=([0-9a-f]+)/i.exec(entry.link || '') || [])[1] || (dec ? BigInt(dec).toString(16) : '');
+  if (!dec && !hex) throw new Error('메일 ID를 알 수 없습니다.');
+
+  let ik = '';
+  try {
+    ik = await getIk(account);
+  } catch { /* ik 없이도 한 번 시도 */ }
+  const ikq = ik ? `ik=${ik}&` : '';
+  const candidates = [
+    dec && `${ikq}view=pt&search=all&permmsgid=msg-f:${dec}`,
+    hex && `${ikq}view=pt&search=all&th=${hex}`,
+    hex && `${ikq}view=pt&search=all&msg=${hex}`,
+  ].filter(Boolean);
+
+  for (const q of candidates) {
+    try {
+      const res = await fetch(gmailWebUrl(account, q), { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const parsed = parsePrintView(html);
+      if (parsed) return parsed;
+    } catch { /* 다음 후보 */ }
+  }
+  delete ikCache[account]; // 키가 바뀌었을 수 있으니 다음엔 다시 가져옴
+  throw new Error('본문을 불러오지 못했습니다.');
+}
+
+// 인쇄 보기 HTML에서 본문 추출 (대화 전체가 오면 가장 최근 메시지)
+function parsePrintView(html) {
+  if (!/class="?message/i.test(html) && !/class="?maincontent/i.test(html)) return null;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script').forEach((el) => el.remove());
+  const messages = [...doc.querySelectorAll('table.message, div.message')];
+  const target = messages.length ? messages[messages.length - 1] : doc.querySelector('.maincontent');
+  if (!target) return null;
+  // 본문 영역만 (머리글 표 제외)을 찾되, 못 찾으면 메시지 전체
+  const body = target.querySelector('div[style*="overflow"], .message > tbody > tr:last-child td, td[colspan="2"] > table td') || target;
+  return { html: body.innerHTML, text: body.textContent.trim() };
+}
