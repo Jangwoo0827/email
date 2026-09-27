@@ -1,4 +1,5 @@
 import { fetchAllAccounts, inboxUrl } from './inbox.js';
+import { markAllReadViaGmail } from './markall.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -242,6 +243,24 @@ function notify(s, title, message) {
 
 // popup → background 메시지
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'MARK_ALL_READ') {
+    // 팝업은 Gmail 탭이 열리며 닫히므로 결과는 알림으로
+    markAllReadViaGmail(msg.account)
+      .then((r) => {
+        if (r.ok) {
+          notify({ notify: true }, '전체 읽음 완료', r.step);
+          setTimeout(checkInbox, 4000); // 배지·목록 갱신
+        } else {
+          notify({ notify: true }, '자동 처리 실패', `${r.step}. 열린 Gmail 탭에서 전체 선택 → 읽음으로 표시를 눌러주세요.`);
+        }
+        sendResponse(r);
+      })
+      .catch((e) => {
+        notify({ notify: true }, '자동 처리 실패', `${e.message}. 열린 Gmail 탭에서 직접 처리해주세요.`);
+        sendResponse({ ok: false, step: e.message });
+      });
+    return true;
+  }
   if (msg?.type === 'TEST_NOTIFY') {
     loadSettings().then(async (s) => {
       await notifyNewMail(

@@ -107,6 +107,7 @@ function renderInbox() {
   const list = $('mailList');
   const a = currentAccount();
   $('unread').textContent = a?.count ? String(a.count) : '';
+  $('markAll').hidden = !a || !!a.error || !a.count;
   if (!settings.inboxCheck) {
     list.textContent = '';
     $('inboxInfo').textContent = '';
@@ -380,6 +381,11 @@ async function init() {
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openGmail').addEventListener('click', () => chrome.tabs.create({ url: inboxUrl(currentAccount()?.email ?? current) }));
   $('refresh').addEventListener('click', refresh);
+  $('markAll').addEventListener('click', () => {
+    const a = currentAccount();
+    if (!a || !confirm(`${a.email}의 안 읽은 메일 ${a.count}통을 모두 읽음으로 표시할까요?\n(Gmail 탭이 열리고 자동으로 처리합니다)`)) return;
+    chrome.runtime.sendMessage({ type: 'MARK_ALL_READ', account: a.index });
+  });
   $('back').addEventListener('click', () => closeReader());
   $('reply').addEventListener('click', startReply);
   $('openInGmail').addEventListener('click', () => {
