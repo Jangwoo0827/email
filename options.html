@@ -53,7 +53,7 @@
   </div>
 
   <h2>받은편지함 새 메일 확인 (Gmail)</h2>
-  <p class="hint">Chrome에 로그인된 Gmail 세션을 사용합니다. 별도 로그인이나 API 키가 필요 없습니다.</p>
+  <p class="hint">Chrome에 로그인된 Gmail 세션을 사용합니다. 별도 로그인이나 API 키가 필요 없습니다. 로그인된 모든 계정을 자동으로 찾아 팝업 왼쪽에 보여줍니다.</p>
   <label class="check"><input type="checkbox" id="inboxCheck"> 새 메일 확인 켜기 (아이콘에 안 읽은 메일 수 표시)</label>
   <label class="check"><input type="checkbox" id="inboxNotify"> 새 메일이 오면 알림</label>
   <div class="row">
@@ -62,13 +62,6 @@
       <select id="inboxInterval">
         <option value="1">1분</option><option value="3">3분</option><option value="5">5분</option>
         <option value="10">10분</option><option value="30">30분</option>
-      </select>
-    </div>
-    <div style="flex:1">
-      <label for="gmailAccount">Gmail 계정 <span class="hint">(여러 계정 로그인 시)</span></label>
-      <select id="gmailAccount">
-        <option value="0">첫 번째 계정 (u/0)</option><option value="1">두 번째 계정 (u/1)</option>
-        <option value="2">세 번째 계정 (u/2)</option><option value="3">네 번째 계정 (u/3)</option>
       </select>
     </div>
   </div>

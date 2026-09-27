@@ -45,3 +45,21 @@ export async function fetchInbox(account = 0) {
     checkedAt: Date.now(),
   };
 }
+
+// Chrome에 로그인된 Gmail 계정을 u/0, u/1 … 순서로 모두 확인
+// (없는 번호는 Gmail이 u/0으로 돌려보내므로 이메일이 중복되면 중단)
+export async function fetchAllAccounts(max = 5) {
+  const accounts = [];
+  for (let i = 0; i < max; i++) {
+    let inbox;
+    try {
+      inbox = await fetchInbox(i);
+    } catch (e) {
+      if (i === 0) throw e;
+      break;
+    }
+    if (accounts.some((a) => a.email === inbox.account)) break;
+    accounts.push({ index: i, email: inbox.account, ...inbox });
+  }
+  return accounts;
+}

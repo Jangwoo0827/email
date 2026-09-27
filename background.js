@@ -1,4 +1,4 @@
-import { fetchInbox, inboxUrl } from './inbox.js';
+import { fetchAllAccounts, inboxUrl } from './inbox.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -52,7 +52,7 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
   if (changes.recipients || changes.contextMenu) rebuildMenus();
-  if (changes.inboxCheck || changes.inboxInterval || changes.gmailAccount) scheduleInbox();
+  if (changes.inboxCheck || changes.inboxInterval) scheduleInbox();
 });
 
 // ---------- 받은편지함 확인 ----------
@@ -63,7 +63,7 @@ async function scheduleInbox() {
   await chrome.alarms.clear(INBOX_ALARM);
   if (!s.inboxCheck) {
     await chrome.action.setBadgeText({ text: '' });
-    await chrome.storage.local.remove('inbox');
+    await chrome.storage.local.remove(['accounts', 'inboxError']);
     return;
   }
   const minutes = Math.max(1, Number(s.inboxInterval) || 5);
@@ -75,26 +75,32 @@ chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === INBOX_ALARM) checkInbox();
 });
 
+// 로그인된 모든 Gmail 계정 확인 → storage.local.accounts
 async function checkInbox() {
   const s = await loadSettings();
   if (!s.inboxCheck) return { ok: false, error: '받은편지함 확인이 꺼져 있습니다.' };
-  const { inbox: prev, seenIds = [] } = await chrome.storage.local.get(['inbox', 'seenIds']);
+  const { accounts: prev, seenIds = [] } = await chrome.storage.local.get(['accounts', 'seenIds']);
   try {
-    const inbox = await fetchInbox(s.gmailAccount);
+    const accounts = await fetchAllAccounts();
     const seen = new Set(seenIds);
-    const fresh = inbox.entries.filter((e) => !seen.has(e.id));
-    // 첫 확인(이전 기록 없음)에는 기존 안 읽은 메일로 알림 폭탄을 보내지 않음
-    if (prev && s.inboxNotify && fresh.length) notifyNewMail(fresh, s.gmailAccount);
-
+    for (const a of accounts) {
+      const fresh = a.entries.filter((e) => !seen.has(e.id));
+      // 처음 발견된 계정은 기존 안 읽은 메일로 알림 폭탄을 보내지 않음
+      const known = prev?.some((p) => p.email === a.email);
+      if (known && s.inboxNotify && fresh.length) notifyNewMail(fresh, a);
+    }
+    const allIds = accounts.flatMap((a) => a.entries.map((e) => e.id));
     await chrome.storage.local.set({
-      inbox: { ...inbox, error: null },
-      seenIds: [...new Set([...seenIds, ...inbox.entries.map((e) => e.id)])].slice(-200),
+      accounts,
+      inboxError: null,
+      seenIds: [...new Set([...seenIds, ...allIds])].slice(-500),
     });
+    const total = accounts.reduce((n, a) => n + a.count, 0);
     await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
-    await chrome.action.setBadgeText({ text: inbox.count ? String(inbox.count > 999 ? '999+' : inbox.count) : '' });
-    return { ok: true, inbox };
+    await chrome.action.setBadgeText({ text: total ? String(total > 999 ? '999+' : total) : '' });
+    return { ok: true };
   } catch (e) {
-    await chrome.storage.local.set({ inbox: { ...(prev || { entries: [], count: 0 }), error: e.message, checkedAt: Date.now() } });
+    await chrome.storage.local.set({ inboxError: e.message });
     await chrome.action.setBadgeBackgroundColor({ color: '#6b7280' });
     await chrome.action.setBadgeText({ text: '?' });
     return { ok: false, error: e.message };
@@ -102,25 +108,25 @@ async function checkInbox() {
 }
 
 function notifyNewMail(fresh, account) {
-  const id = `qes-mail-${Date.now()}`;
+  const id = `qes-mail-${Date.now()}-${account.index}`;
+  const one = fresh.length === 1;
   const opts = {
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-    title: fresh.length === 1 ? `새 메일: ${fresh[0].from}` : `새 메일 ${fresh.length}통`,
-    message: fresh.length === 1 ? `${fresh[0].title}
-${fresh[0].summary}`.slice(0, 250) : '',
+    title: one ? `새 메일: ${fresh[0].from}` : `새 메일 ${fresh.length}통`,
+    contextMessage: account.email,
+    message: one ? `${fresh[0].title}\n${fresh[0].summary}`.slice(0, 250) : '',
     priority: 1,
   };
-  if (fresh.length === 1) {
+  if (one) {
     chrome.notifications.create(id, { type: 'basic', ...opts });
   } else {
     chrome.notifications.create(id, {
       type: 'list',
       ...opts,
-      message: '',
       items: fresh.slice(0, 5).map((e) => ({ title: e.from, message: e.title })),
     });
   }
-  mailLinks.set(id, fresh.length === 1 ? fresh[0].link : inboxUrl(account));
+  mailLinks.set(id, one ? fresh[0].link : inboxUrl(account.index));
 }
 
 const mailLinks = new Map();
@@ -154,14 +160,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ---------- 전송 ----------
 // to: 이메일 배열, tabId: mailto를 띄울 현재 탭
-async function sendEmail({ to, subject, body, tabId }, settings) {
+async function sendEmail({ to, subject, body, tabId, account }, settings) {
   const s = settings || (await loadSettings());
   to = (Array.isArray(to) ? to : [to]).filter(isValidEmail);
   const who = to.join(', ');
   try {
     if (!to.length) throw new Error('받는 사람을 한 명 이상 선택하세요.');
     if (COMPOSE_MODES.includes(s.sendMode)) {
-      await openCompose(buildComposeUrl(s.sendMode, to, subject, body), tabId);
+      await openCompose(buildComposeUrl(s.sendMode, to, subject, body, account ?? s.gmailAccount), tabId);
       notify(s, '메일 작성창을 열었습니다', `받는 사람: ${who}`);
     } else {
       await sendViaApi(s, { to, subject, body });

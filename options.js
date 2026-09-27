@@ -3,7 +3,7 @@ import { loadSettings, saveSettings, isValidEmail, buildMail, MAX_RECIPIENTS } f
 const $ = (id) => document.getElementById(id);
 const TEXT_FIELDS = ['subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
 const CHECK_FIELDS = ['notify', 'contextMenu', 'inboxCheck', 'inboxNotify'];
-const NUMBER_FIELDS = ['inboxInterval', 'gmailAccount'];
+const NUMBER_FIELDS = ['inboxInterval'];
 let recipients = [];
 
 function setStatus(text, kind = '') {
