@@ -54,8 +54,7 @@
 
   <h2>받은편지함 새 메일 확인 (Gmail)</h2>
   <p class="hint">Chrome에 로그인된 Gmail 세션을 사용합니다. 별도 로그인이나 API 키가 필요 없습니다. 로그인된 모든 계정을 자동으로 찾아 팝업 왼쪽에 보여줍니다.</p>
-  <label class="check"><input type="checkbox" id="inboxCheck"> 새 메일 확인 켜기 (아이콘에 안 읽은 메일 수 표시)</label>
-  <label class="check"><input type="checkbox" id="inboxNotify"> 새 메일이 오면 알림</label>
+  <label class="check"><input type="checkbox" id="inboxCheck"> 새 메일 확인 켜기</label>
   <label for="extraAccounts">계정 직접 추가 <span class="hint">자동으로 안 뜨는 Gmail 계정 (한 줄에 하나). Chrome에서 그 계정으로 Gmail에 로그인되어 있어야 합니다.</span></label>
   <textarea id="extraAccounts" rows="2" style="min-height:0" placeholder="electriceel6974@gmail.com"></textarea>
   <div class="row">
@@ -84,8 +83,25 @@
   <label>연결된 계정</label>
   <div id="connectedList" class="hint">없음</div>
 
-  <h2>동작</h2>
+  <h2>알림</h2>
+  <label class="check"><input type="checkbox" id="inboxNotify"> 새 메일이 오면 알림</label>
+  <div id="notifyOpts">
+    <label>알림 받을 계정</label>
+    <div id="notifyAccounts" class="hint">계정을 찾는 중… (팝업을 한 번 열면 표시됩니다)</div>
+    <label class="check"><input type="checkbox" id="notifyPreview"> 보낸 사람·제목·내용 미리보기 표시 <span class="hint">(끄면 "새 메일이 도착했습니다"만 표시)</span></label>
+    <label class="check"><input type="checkbox" id="notifySticky"> 클릭하거나 닫을 때까지 알림 유지</label>
+    <label class="check"><input type="checkbox" id="notifySilent"> 알림 소리 끄기</label>
+    <label class="check"><input type="checkbox" id="quietEnabled"> 방해 금지 시간</label>
+    <div class="row" id="quietRow">
+      <input type="time" id="quietStart" style="width:auto"> <span>부터</span>
+      <input type="time" id="quietEnd" style="width:auto"> <span>까지는 새 메일 알림 안 함</span>
+    </div>
+  </div>
+  <label class="check"><input type="checkbox" id="showBadge"> 아이콘에 안 읽은 메일 수 표시</label>
   <label class="check"><input type="checkbox" id="notify"> 전송 완료 알림 표시 (실패 알림은 항상 표시)</label>
+  <div style="margin-top:8px"><button id="testNotify">테스트 알림 보내기</button></div>
+
+  <h2>동작</h2>
   <label class="check"><input type="checkbox" id="contextMenu"> 우클릭 메뉴에 "이메일로 보내기" 표시</label>
 
   <div class="save-bar row">

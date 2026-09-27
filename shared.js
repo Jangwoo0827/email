@@ -13,6 +13,14 @@ export const DEFAULT_SETTINGS = {
   inboxCheck: true, // Gmail 받은편지함 새 메일 확인
   inboxInterval: 5, // 분
   inboxNotify: true, // 새 메일 알림
+  notifyMuted: [], // 알림 끈 계정 (이메일)
+  notifyPreview: true, // 알림에 제목·내용 미리보기 표시
+  notifySticky: false, // 클릭할 때까지 알림 유지
+  notifySilent: false, // 소리 없이
+  quietEnabled: false, // 방해 금지 시간
+  quietStart: '22:00',
+  quietEnd: '07:00',
+  showBadge: true, // 아이콘에 안 읽은 메일 수
   oauthClientId: '', // Gmail API용 Google OAuth 클라이언트 ID (메일 본문 보기·바로 보내기)
   extraAccounts: [], // 자동으로 안 잡히는 Gmail 계정 직접 추가
   gmailAccount: 0, // 팝업 왼쪽에서 선택한 Gmail 계정 순번 (/mail/u/N) — 보내기/받은편지함 모두 사용

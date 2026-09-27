@@ -2,8 +2,8 @@ import { redirectUrl, disconnect } from './gmail.js';
 import { loadSettings, saveSettings, isValidEmail, buildMail, MAX_RECIPIENTS } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
-const TEXT_FIELDS = ['oauthClientId', 'subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
-const CHECK_FIELDS = ['notify', 'contextMenu', 'inboxCheck', 'inboxNotify'];
+const TEXT_FIELDS = ['quietStart', 'quietEnd', 'oauthClientId', 'subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
+const CHECK_FIELDS = ['notify', 'contextMenu', 'inboxCheck', 'inboxNotify', 'notifyPreview', 'notifySticky', 'notifySilent', 'quietEnabled', 'showBadge'];
 const NUMBER_FIELDS = ['inboxInterval'];
 let recipients = [];
 
@@ -63,6 +63,7 @@ function collect() {
   for (const k of ['oauthClientId', 'apiKey', 'fromEmail', 'webhookUrl']) out[k] = out[k].trim();
   for (const k of CHECK_FIELDS) out[k] = $(k).checked;
   for (const k of NUMBER_FIELDS) out[k] = Number($(k).value);
+  out.notifyMuted = [...document.querySelectorAll('#notifyAccounts input')].filter((c) => !c.checked).map((c) => c.value);
   out.extraAccounts = $('extraAccounts').value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
   return out;
 }
@@ -123,10 +124,40 @@ async function renderConnected() {
     b.addEventListener('click', async () => {
       await disconnect(email);
       renderConnected();
+  $('inboxNotify').addEventListener('change', updateNotifyUi);
+  $('quietEnabled').addEventListener('change', updateNotifyUi);
+  $('testNotify').addEventListener('click', async () => {
+    if (!(await save())) return; // 현재 설정으로 테스트
+    await chrome.runtime.sendMessage({ type: 'TEST_NOTIFY' });
+    setStatus('테스트 알림을 보냈습니다', 'ok');
+  });
     });
     row.append(email, b);
     box.append(row);
   }
+}
+
+async function renderNotifyAccounts(muted) {
+  const { accounts = [] } = await chrome.storage.local.get('accounts');
+  const box = $('notifyAccounts');
+  if (!accounts.length) return;
+  box.textContent = '';
+  for (const a of accounts) {
+    const email = a.email.toLowerCase();
+    const label = document.createElement('label');
+    label.className = 'check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = email;
+    cb.checked = !muted.includes(email);
+    label.append(cb, ' ', a.email);
+    box.append(label);
+  }
+}
+
+function updateNotifyUi() {
+  $('notifyOpts').style.opacity = $('inboxNotify').checked ? '' : '.5';
+  $('quietRow').style.display = $('quietEnabled').checked ? '' : 'none';
 }
 
 async function init() {
@@ -141,6 +172,8 @@ async function init() {
   recipients = s.recipients.map((r) => ({ name: r.name || '', email: r.email || '' }));
   for (const k of TEXT_FIELDS) $(k).value = s[k] ?? '';
   for (const k of CHECK_FIELDS) $(k).checked = !!s[k];
+  updateNotifyUi();
+  renderNotifyAccounts(s.notifyMuted || []);
   for (const k of NUMBER_FIELDS) $(k).value = String(s[k]);
   $('extraAccounts').value = (s.extraAccounts || []).join('\n');
   if (!recipients.length) recipients.push({ name: '', email: '' });

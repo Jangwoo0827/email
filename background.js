@@ -53,7 +53,7 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
   if (changes.recipients || changes.contextMenu) rebuildMenus();
-  if (changes.inboxCheck || changes.inboxInterval || changes.extraAccounts) scheduleInbox();
+  if (changes.inboxCheck || changes.inboxInterval || changes.extraAccounts || changes.showBadge) scheduleInbox();
 });
 
 // ---------- 받은편지함 확인 ----------
@@ -88,7 +88,8 @@ async function checkInbox() {
       const fresh = a.entries.filter((e) => !seen.has(e.id));
       // 처음 발견된 계정은 기존 안 읽은 메일로 알림 폭탄을 보내지 않음
       const known = prev?.some((p) => p.email === a.email);
-      if (known && s.inboxNotify && fresh.length) notifyNewMail(fresh, a);
+      const muted = (s.notifyMuted || []).includes(a.email.toLowerCase());
+      if (known && s.inboxNotify && !muted && !inQuietHours(s) && fresh.length) notifyNewMail(fresh, a, s);
     }
     const allIds = accounts.flatMap((a) => a.entries.map((e) => e.id));
     await chrome.storage.local.set({
@@ -98,7 +99,7 @@ async function checkInbox() {
     });
     const total = accounts.reduce((n, a) => n + a.count, 0);
     await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
-    await chrome.action.setBadgeText({ text: total ? String(total > 999 ? '999+' : total) : '' });
+    await chrome.action.setBadgeText({ text: s.showBadge && total ? String(total > 999 ? '999+' : total) : '' });
     return { ok: true };
   } catch (e) {
     await chrome.storage.local.set({ inboxError: e.message });
@@ -108,17 +109,37 @@ async function checkInbox() {
   }
 }
 
-function notifyNewMail(fresh, account) {
-  const id = `qes-mail-${Date.now()}-${account.index}`;
+// 방해 금지 시간 (자정을 넘기는 구간도 지원, 예: 22:00~07:00)
+function inQuietHours(s) {
+  if (!s.quietEnabled) return false;
+  const toMin = (t) => {
+    const [h, m] = String(t || '0:0').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const now = new Date();
+  const n = now.getHours() * 60 + now.getMinutes();
+  const start = toMin(s.quietStart);
+  const end = toMin(s.quietEnd);
+  if (start === end) return false;
+  return start < end ? n >= start && n < end : n >= start || n < end;
+}
+
+async function notifyNewMail(fresh, account, s) {
+  const id = `qes-mail-${Date.now()}-${account.email}`;
   const one = fresh.length === 1;
+  let message;
+  if (!s.notifyPreview) message = one ? '새 메일이 도착했습니다.' : `${fresh.length}통의 새 메일이 도착했습니다.`;
+  else message = one ? `${fresh[0].title}\n${fresh[0].summary}`.slice(0, 250) : '';
   const opts = {
     iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-    title: one ? `새 메일: ${fresh[0].from}` : `새 메일 ${fresh.length}통`,
+    title: one && s.notifyPreview ? `새 메일: ${fresh[0].from}` : `새 메일 ${fresh.length}통`,
     contextMessage: account.email,
-    message: one ? `${fresh[0].title}\n${fresh[0].summary}`.slice(0, 250) : '',
+    message,
     priority: 1,
+    requireInteraction: !!s.notifySticky,
+    silent: !!s.notifySilent,
   };
-  if (one) {
+  if (one || !s.notifyPreview) {
     chrome.notifications.create(id, { type: 'basic', ...opts });
   } else {
     chrome.notifications.create(id, {
@@ -127,15 +148,24 @@ function notifyNewMail(fresh, account) {
       items: fresh.slice(0, 5).map((e) => ({ title: e.from, message: e.title })),
     });
   }
-  mailLinks.set(id, one ? fresh[0].link : inboxUrl(account.index));
+  // service worker가 잠들어도 클릭 시 링크를 찾을 수 있게 session storage에 저장
+  const { mailLinks = {} } = await chrome.storage.session.get('mailLinks');
+  mailLinks[id] = one ? fresh[0].link : inboxUrl(account.index);
+  await chrome.storage.session.set({ mailLinks });
 }
 
-const mailLinks = new Map();
-chrome.notifications.onClicked.addListener((id) => {
+chrome.notifications.onClicked.addListener(async (id) => {
   if (!id.startsWith('qes-mail-')) return;
-  chrome.tabs.create({ url: mailLinks.get(id) || inboxUrl(0) });
+  const { mailLinks = {} } = await chrome.storage.session.get('mailLinks');
+  chrome.tabs.create({ url: mailLinks[id] || inboxUrl(0) });
   chrome.notifications.clear(id);
-  mailLinks.delete(id);
+});
+
+chrome.notifications.onClosed.addListener(async (id) => {
+  if (!id.startsWith('qes-mail-')) return;
+  const { mailLinks = {} } = await chrome.storage.session.get('mailLinks');
+  delete mailLinks[id];
+  await chrome.storage.session.set({ mailLinks });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -221,6 +251,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         notify({ notify: true }, 'Gmail 연결 실패', e.message);
         sendResponse({ ok: false, error: e.message });
       });
+    return true;
+  }
+  if (msg?.type === 'TEST_NOTIFY') {
+    loadSettings().then(async (s) => {
+      await notifyNewMail(
+        [{ from: '테스트 발신자', title: '알림 테스트', summary: '설정한 대로 알림이 표시됩니다.', link: inboxUrl(0) }],
+        { email: '테스트', index: 0 },
+        s,
+      );
+      sendResponse({ ok: true });
+    });
     return true;
   }
   if (msg?.type === 'CHECK_INBOX') {
