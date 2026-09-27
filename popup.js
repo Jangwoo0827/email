@@ -214,7 +214,7 @@ async function renderFolder(a, { more = false, force = false } = {}) {
   } else {
     list.textContent = '';
     $('moreRow').hidden = true;
-    list.append(msg('Gmail에서 불러오는 중… (잠깐 최소화된 창이 열렸다 닫힙니다)'));
+    list.append(msg('Gmail에서 불러오는 중… (탭이 잠깐 열렸다 닫힙니다)'));
   }
   const res = await chrome.runtime.sendMessage({ type: 'LIST_ALL_MAIL', account: a.index, folder, page });
   if (seq !== folderSeq) return;
@@ -457,8 +457,7 @@ async function init() {
   let view = 'inboxView';
   try { view = localStorage.getItem('qes-view') || view; } catch { /* 무시 */ }
   showView(view);
-  try { $('folder').value = localStorage.getItem('qes-folder') || 'unread'; } catch { /* 무시 */ }
-  if (!$('folder').value) $('folder').value = 'unread';
+  $('folder').value = 'unread'; // 전체 목록은 Gmail 탭을 열어야 하므로 직접 고를 때만 불러옴
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openGmail').addEventListener('click', () => chrome.tabs.create({ url: inboxUrl(currentAccount()?.email ?? current) }));
@@ -467,10 +466,7 @@ async function init() {
     if (a && $('folder').value !== 'unread') renderFolder(a, { force: true });
     refresh();
   });
-  $('folder').addEventListener('change', () => {
-    try { localStorage.setItem('qes-folder', $('folder').value); } catch { /* 무시 */ }
-    renderInbox();
-  });
+  $('folder').addEventListener('change', () => renderInbox());
   $('more').addEventListener('click', () => {
     const a = currentAccount();
     if (a) renderFolder(a, { more: true });

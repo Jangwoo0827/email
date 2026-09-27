@@ -1,5 +1,6 @@
 // 전체 메일 목록 (읽은 메일 포함, OAuth 없이)
-// Atom 피드는 안 읽은 메일만 주므로, Gmail을 최소화된 창으로 잠깐 열어 목록을 읽어온 뒤 닫음
+// Atom 피드는 안 읽은 메일만 주므로, Gmail을 백그라운드 탭으로 잠깐 열어 목록을 읽어온 뒤 닫음
+// (새 창을 열면 포커스가 옮겨가 확장 팝업이 닫히므로 반드시 현재 창의 비활성 탭 사용)
 // Gmail 화면 구조가 바뀌면 실패할 수 있음
 
 import { gmailWebUrl } from './shared.js';
@@ -7,12 +8,8 @@ import { gmailWebUrl } from './shared.js';
 // folder: 'inbox' | 'all' | 'sent' | 'starred', page: 1부터
 export async function listAllMail(account, { folder = 'inbox', page = 1 } = {}) {
   const hash = `#${folder}${page > 1 ? `/p${page}` : ''}`;
-  const win = await chrome.windows.create({
-    url: gmailWebUrl(account, '', hash),
-    state: 'minimized',
-    focused: false,
-  });
-  const tabId = win.tabs[0].id;
+  const tab = await chrome.tabs.create({ url: gmailWebUrl(account, '', hash), active: false });
+  const tabId = tab.id;
   try {
     await waitForLoad(tabId);
     const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: scrapeMailList });
@@ -21,7 +18,7 @@ export async function listAllMail(account, { folder = 'inbox', page = 1 } = {}) 
     if (r.error) throw new Error(r.error);
     return r;
   } finally {
-    chrome.windows.remove(win.id).catch(() => {});
+    chrome.tabs.remove(tabId).catch(() => {});
   }
 }
 
