@@ -245,6 +245,11 @@ function renderMailBody(m) {
     '<style>:host{display:block}.wrap{font:14px/1.5 system-ui,"Malgun Gothic",sans-serif;padding:12px;color:#111;background:#fff;word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap;font:inherit;margin:0}a{color:#1a56db}</style>';
   const body = m.html ? sanitize(m.html) : `<pre>${escapeHtml(m.text || '(본문 없음)')}</pre>`;
   root.innerHTML = `${base}<div class="wrap">${body}</div>`;
+  // HTML이 보이는 글자 없이 그려지면(숨김 스타일 등) 텍스트로 대체해 흰 화면 방지
+  const wrap = root.querySelector('.wrap');
+  if (m.html && !wrap.innerText.trim() && !wrap.querySelector('img')) {
+    wrap.innerHTML = `<pre>${escapeHtml(m.text || '(본문을 표시할 수 없습니다. "Gmail에서 열기"를 누르세요.)')}</pre>`;
+  }
 }
 
 function clearMailBody() {

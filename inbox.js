@@ -141,28 +141,48 @@ export async function fetchMessageBody(account, entry) {
     hex && `${ikq}view=pt&search=all&msg=${hex}`,
   ].filter(Boolean);
 
+  const tried = [];
   for (const q of candidates) {
     try {
       const res = await fetch(gmailWebUrl(account, q), { credentials: 'include', cache: 'no-store' });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        tried.push(`HTTP ${res.status}`);
+        continue;
+      }
       const html = await res.text();
       const parsed = parsePrintView(html);
-      if (parsed) return parsed;
-    } catch { /* 다음 후보 */ }
+      if (parsed.ok) return parsed;
+      tried.push(parsed.reason);
+    } catch (e) {
+      tried.push(e.message);
+    }
   }
   delete ikCache[account]; // 키가 바뀌었을 수 있으니 다음엔 다시 가져옴
-  throw new Error('본문을 불러오지 못했습니다.');
+  throw new Error(`본문을 불러오지 못했습니다${ik ? '' : ' (계정 키 없음)'}: ${tried.join(' / ')}`);
 }
 
 // 인쇄 보기 HTML에서 본문 추출 (대화 전체가 오면 가장 최근 메시지)
-function parsePrintView(html) {
-  if (!/class="?message/i.test(html) && !/class="?maincontent/i.test(html)) return null;
+// 실패하면 { ok: false, reason } — 받은 페이지가 무엇이었는지 알려주기 위함
+export function parsePrintView(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script').forEach((el) => el.remove());
-  const messages = [...doc.querySelectorAll('table.message, div.message')];
-  const target = messages.length ? messages[messages.length - 1] : doc.querySelector('.maincontent');
-  if (!target) return null;
-  // 본문 영역만 (머리글 표 제외)을 찾되, 못 찾으면 메시지 전체
-  const body = target.querySelector('div[style*="overflow"], .message > tbody > tr:last-child td, td[colspan="2"] > table td') || target;
-  return { html: body.innerHTML, text: body.textContent.trim() };
+  const title = (doc.title || '').trim().slice(0, 40) || '제목 없음';
+  // 인쇄 보기 페이지는 bodycontainer/maincontent 구조. Gmail 앱 화면이나 로그인 페이지면 여기서 거름
+  const container = doc.querySelector('.bodycontainer, .maincontent');
+  if (!container) return { ok: false, reason: `인쇄 페이지 아님("${title}", ${html.length}자)` };
+  doc.querySelectorAll('script, noscript').forEach((el) => el.remove());
+
+  const messages = [...container.querySelectorAll('table.message')];
+  const target = messages.length ? messages[messages.length - 1] : container;
+  const candidates = [
+    ...target.querySelectorAll('div[style*="overflow"]'),
+    target.querySelector(':scope > tbody > tr:last-child > td'),
+    target,
+  ].filter(Boolean);
+  for (const el of candidates) {
+    const text = el.textContent.replace(/\s+/g, ' ').trim();
+    if (text.length > 0 || el.querySelector('img')) {
+      return { ok: true, html: el.innerHTML, text: el.innerText || el.textContent.trim() };
+    }
+  }
+  return { ok: false, reason: `본문 비어 있음("${title}")` };
 }
