@@ -214,12 +214,41 @@ function drawApiList(a, items) {
 // ---------- 메일 읽기 ----------
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-function mailDoc(m) {
-  const style =
-    '<style>body{font:14px/1.5 system-ui,"Malgun Gothic",sans-serif;margin:10px;color:#111;background:#fff;word-break:break-word}img{max-width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}</style>';
-  const body = m.html || `<pre>${escapeHtml(m.text || '(본문 없음)')}</pre>`;
-  // 링크는 새 탭으로. sandbox라 메일 안의 스크립트는 실행되지 않음
-  return `<!doctype html><meta charset="utf-8"><base target="_blank">${style}${body}`;
+// 메일 HTML 정리: 스크립트·폼·임베드·이벤트 핸들러·javascript: 링크 제거
+function sanitize(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script, iframe, frame, object, embed, form, input, button, textarea, select, meta, link[rel="import"], base').forEach((el) => el.remove());
+  for (const el of doc.querySelectorAll('*')) {
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      const val = attr.value.trim().toLowerCase();
+      if (name.startsWith('on')) el.removeAttribute(attr.name);
+      else if (['href', 'src', 'action', 'xlink:href', 'formaction'].includes(name) && val.startsWith('javascript:')) el.removeAttribute(attr.name);
+    }
+    if (el.tagName === 'A') {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+  }
+  // <head>의 <style>도 살려서 본문 앞에 붙임
+  const styles = [...doc.querySelectorAll('style')].map((s) => s.outerHTML).join('');
+  doc.querySelectorAll('body style').forEach((s) => s.remove());
+  return styles + doc.body.innerHTML;
+}
+
+// Shadow DOM에 그려서 메일 스타일이 팝업 UI를 망가뜨리지 않게 함
+function renderMailBody(m) {
+  const host = $('rBody');
+  const root = host.shadowRoot || host.attachShadow({ mode: 'open' });
+  const base =
+    '<style>:host{display:block}.wrap{font:14px/1.5 system-ui,"Malgun Gothic",sans-serif;padding:12px;color:#111;background:#fff;word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap;font:inherit;margin:0}a{color:#1a56db}</style>';
+  const body = m.html ? sanitize(m.html) : `<pre>${escapeHtml(m.text || '(본문 없음)')}</pre>`;
+  root.innerHTML = `${base}<div class="wrap">${body}</div>`;
+}
+
+function clearMailBody() {
+  const root = $('rBody').shadowRoot;
+  if (root) root.innerHTML = '';
 }
 
 async function openReader(a, it) {
@@ -228,7 +257,7 @@ async function openReader(a, it) {
   $('rSubject').textContent = it.subject;
   $('rMeta').textContent = '불러오는 중…';
   $('rAttach').textContent = '';
-  $('rBody').srcdoc = '';
+  clearMailBody();
   openMsg = { ...it, account: a.email };
   try {
     const m = await getMessage(a.email, it.id);
@@ -237,7 +266,7 @@ async function openReader(a, it) {
     $('rSubject').textContent = m.subject;
     $('rMeta').textContent = `${m.from} → ${m.to}${m.cc ? ` · 참조 ${m.cc}` : ''} · ${new Date(m.date).toLocaleString()}`;
     $('rAttach').textContent = m.attachments.length ? `📎 첨부 ${m.attachments.map((x) => x.name).join(', ')} (Gmail에서 열기)` : '';
-    $('rBody').srcdoc = mailDoc(m);
+    renderMailBody(m);
     if (m.unread) {
       await markRead(a.email, m.id);
       it.unread = false;
@@ -255,7 +284,7 @@ function closeReader(redraw = true) {
   openMsg = null;
   $('readerPane').hidden = true;
   $('listPane').hidden = false;
-  $('rBody').srcdoc = '';
+  clearMailBody();
   if (redraw) renderInbox();
 }
 
