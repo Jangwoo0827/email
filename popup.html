@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <link rel="stylesheet" href="style.css">
   <style>
-    body { width: 640px; }
+    body { width: 700px; }
     [hidden] { display: none !important; }
     a { color: var(--accent); cursor: pointer; }
-    .layout { display: grid; grid-template-columns: 210px 1fr; min-height: 480px; }
+    .layout { display: grid; grid-template-columns: 200px 1fr; height: 580px; }
+    main { overflow-y: auto; }
 
     /* 왼쪽: 계정 */
     aside { border-right: 1px solid var(--border); background: var(--field); padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; }
@@ -53,6 +54,19 @@
     .mail .time { color: var(--muted); font-size: 11px; white-space: nowrap; }
     .mail .sum { color: var(--muted); font-size: 12px; }
     .msg { padding: 24px 4px; color: var(--muted); text-align: center; }
+    .mail { cursor: pointer; }
+    .mail.unread .from, .mail.unread .subj { font-weight: 700; }
+    .mail:not(.unread) .subj { color: var(--muted); }
+    .banner { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--field); font-size: 12px; }
+    .banner span { flex: 1; }
+    .banner button { white-space: nowrap; }
+    .reader-bar { margin-top: 8px; }
+    .reader-bar .grow { flex: 1; }
+    #rSubject { font-size: 15px; margin: 10px 0 4px; word-break: break-word; }
+    #rMeta { font-size: 12px; word-break: break-all; }
+    #rBody { width: 100%; height: 380px; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+    .reply-info { margin-top: 8px; font-size: 12px; padding: 6px 8px; border-radius: 6px; background: var(--field); display: flex; justify-content: space-between; gap: 8px; }
+    select#filter { width: auto; padding: 5px 6px; }
   </style>
 </head>
 <body>
@@ -73,15 +87,40 @@
     </nav>
 
     <section id="inboxView" hidden>
-      <div class="inbox-bar">
-        <span class="hint" id="inboxInfo"></span>
-        <button class="primary" id="openGmail">Gmail 열기</button>
+      <div class="banner" id="connectBanner" hidden>
+        <span id="connectText"></span>
+        <button class="primary" id="connectBtn">계정 연결</button>
       </div>
-      <div id="mailList"></div>
+      <div id="listPane">
+        <div class="inbox-bar">
+          <span class="hint" id="inboxInfo"></span>
+          <div class="row">
+            <select id="filter" hidden>
+              <option value="in:inbox is:unread">안 읽음</option>
+              <option value="in:inbox">전체</option>
+            </select>
+            <button class="primary" id="openGmail">Gmail 열기</button>
+          </div>
+        </div>
+        <div id="mailList"></div>
+      </div>
+      <div id="readerPane" hidden>
+        <div class="row reader-bar">
+          <button id="back">← 목록</button>
+          <span class="grow"></span>
+          <button class="primary" id="reply">답장</button>
+          <button id="openInGmail">Gmail에서 열기</button>
+        </div>
+        <h3 id="rSubject"></h3>
+        <div class="hint" id="rMeta"></div>
+        <div class="hint" id="rAttach"></div>
+        <iframe id="rBody" sandbox="allow-popups allow-popups-to-escape-sandbox" title="메일 본문"></iframe>
+      </div>
     </section>
 
     <section id="sendView" hidden>
       <div class="from-line" id="fromLine"></div>
+      <div class="reply-info" id="replyInfo" hidden><span id="replyText"></span><a id="cancelReply">답장 취소</a></div>
       <div id="compose">
         <label for="to">받는 사람 <span class="hint">여러 명은 쉼표(,)로 구분</span></label>
         <input type="text" id="to" list="toSuggest" placeholder="name@example.com" autocomplete="off" spellcheck="false">

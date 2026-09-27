@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   inboxCheck: true, // Gmail 받은편지함 새 메일 확인
   inboxInterval: 5, // 분
   inboxNotify: true, // 새 메일 알림
+  oauthClientId: '', // Gmail API용 Google OAuth 클라이언트 ID (메일 본문 보기·바로 보내기)
   extraAccounts: [], // 자동으로 안 잡히는 Gmail 계정 직접 추가
   gmailAccount: 0, // 팝업 왼쪽에서 선택한 Gmail 계정 순번 (/mail/u/N) — 보내기/받은편지함 모두 사용
   sendMode: 'gmail', // 'gmail' | 'outlook' | 'mailto' | 'resend' | 'sendgrid' | 'webhook'

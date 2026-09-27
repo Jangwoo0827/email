@@ -1,4 +1,5 @@
-import { fetchAllAccounts, inboxUrl, accountsDiag } from './inbox.js';
+import { fetchAllAccounts, inboxUrl } from './inbox.js';
+import { authorize } from './gmail.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -93,7 +94,6 @@ async function checkInbox() {
     await chrome.storage.local.set({
       accounts,
       inboxError: null,
-      accountsDiag,
       seenIds: [...new Set([...seenIds, ...allIds])].slice(-500),
     });
     const total = accounts.reduce((n, a) => n + a.count, 0);
@@ -210,6 +210,19 @@ function notify(s, title, message) {
 
 // popup → background 메시지
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'CONNECT_ACCOUNT') {
+    // 로그인 창이 뜨면 팝업이 닫히므로 background에서 처리하고 결과는 알림으로
+    authorize(msg.email, true)
+      .then((addr) => {
+        notify({ notify: true }, 'Gmail 연결됨', `${addr} — 팝업을 다시 열면 메일 본문 보기와 바로 보내기를 쓸 수 있습니다.`);
+        sendResponse({ ok: true, email: addr });
+      })
+      .catch((e) => {
+        notify({ notify: true }, 'Gmail 연결 실패', e.message);
+        sendResponse({ ok: false, error: e.message });
+      });
+    return true;
+  }
   if (msg?.type === 'CHECK_INBOX') {
     checkInbox().then(sendResponse);
     return true;

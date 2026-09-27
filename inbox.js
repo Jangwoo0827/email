@@ -49,44 +49,6 @@ export async function fetchInbox(account = 0) {
 // account: 순번(0,1,…) 또는 이메일 주소 — Gmail은 /mail/u/<이메일>/ 형식도 지원
 const u = (account) => encodeURIComponent(String(account));
 
-// 마지막 계정 목록 조회 진단 메시지 (팝업에 표시)
-export let accountsDiag = '';
-
-// Chrome에 로그인된 Google 계정 목록 (계정 전환 메뉴와 같은 목록)
-async function listGoogleAccounts() {
-  const urls = [
-    'https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard',
-    'https://accounts.google.com/ListAccounts?json=standard&source=ogb&listPages=0',
-  ];
-  const errors = [];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
-      if (!res.ok) {
-        errors.push(`HTTP ${res.status}`);
-        continue;
-      }
-      const text = (await res.text()).replace(/^\)\]\}'\s*/, ''); // XSSI 방지 접두사 제거
-      const data = JSON.parse(text);
-      const rows = Array.isArray(data?.[1]) ? data[1] : [];
-      const list = rows
-        .filter(Array.isArray)
-        .map((r) => ({
-          email: r.find((v) => typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)),
-          name: typeof r[2] === 'string' ? r[2] : '',
-          photo: typeof r[4] === 'string' && r[4].startsWith('http') ? r[4] : '',
-        }))
-        .filter((x) => x.email);
-      if (list.length) return list;
-      errors.push('빈 목록');
-    } catch (e) {
-      errors.push(e.message);
-    }
-  }
-  accountsDiag = `계정 목록 읽기 실패 (${errors.join(', ')})`;
-  return null;
-}
-
 // 이메일 경로로 먼저, 안 되면 순번으로
 async function fetchFor(email, index) {
   try {
@@ -113,12 +75,8 @@ async function checkOne(acc, index) {
 // 로그인된 모든 계정의 받은편지함 확인. 실패한 계정도 목록에 남기고 error로 표시
 // extraEmails: 설정에서 직접 추가한 계정
 export async function fetchAllAccounts(extraEmails = []) {
-  accountsDiag = '';
-  let known = await listGoogleAccounts();
   let accounts;
-  if (known) {
-    accounts = await Promise.all(known.slice(0, 10).map((acc, i) => checkOne(acc, i)));
-  } else {
+  {
     // 목록을 못 읽으면 u/0 … u/9 를 시도 (없는 번호는 u/0으로 돌아와 중복 → 건너뜀)
     accounts = [];
     let misses = 0;
@@ -141,6 +99,6 @@ export async function fetchAllAccounts(extraEmails = []) {
     have.add(email.toLowerCase());
     accounts.push(await checkOne({ email, name: '', photo: '' }, null));
   }
-  if (!accounts.length) throw new Error(accountsDiag || 'Gmail에 로그인되어 있지 않습니다.');
+  if (!accounts.length) throw new Error('Gmail에 로그인되어 있지 않습니다.');
   return accounts;
 }
