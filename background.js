@@ -1,5 +1,4 @@
 import { fetchAllAccounts, inboxUrl } from './inbox.js';
-import { authorize } from './gmail.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -44,6 +43,9 @@ function rebuildMenus() {
 chrome.runtime.onInstalled.addListener(async (details) => {
   await rebuildMenus();
   await scheduleInbox();
+  // v3.0: OAuth(Gmail API) 기능 제거 → 남은 연결 정보 정리
+  chrome.storage.local.remove('connected');
+  chrome.storage.sync.remove('oauthClientId');
   if (details.reason === 'install') chrome.runtime.openOptionsPage();
 });
 chrome.runtime.onStartup.addListener(() => {
@@ -240,19 +242,6 @@ function notify(s, title, message) {
 
 // popup → background 메시지
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === 'CONNECT_ACCOUNT') {
-    // 로그인 창이 뜨면 팝업이 닫히므로 background에서 처리하고 결과는 알림으로
-    authorize(msg.email, true)
-      .then((addr) => {
-        notify({ notify: true }, 'Gmail 연결됨', `${addr} — 팝업을 다시 열면 메일 본문 보기와 바로 보내기를 쓸 수 있습니다.`);
-        sendResponse({ ok: true, email: addr });
-      })
-      .catch((e) => {
-        notify({ notify: true }, 'Gmail 연결 실패', e.message);
-        sendResponse({ ok: false, error: e.message });
-      });
-    return true;
-  }
   if (msg?.type === 'TEST_NOTIFY') {
     loadSettings().then(async (s) => {
       await notifyNewMail(

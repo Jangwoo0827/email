@@ -21,7 +21,6 @@ export const DEFAULT_SETTINGS = {
   quietStart: '22:00',
   quietEnd: '07:00',
   showBadge: true, // 아이콘에 안 읽은 메일 수
-  oauthClientId: '', // Gmail API용 Google OAuth 클라이언트 ID (메일 본문 보기·바로 보내기)
   extraAccounts: [], // 자동으로 안 잡히는 Gmail 계정 직접 추가
   gmailAccount: 0, // 팝업 왼쪽에서 선택한 Gmail 계정 순번 (/mail/u/N) — 보내기/받은편지함 모두 사용
   sendMode: 'gmail', // 'gmail' | 'outlook' | 'mailto' | 'resend' | 'sendgrid' | 'webhook'

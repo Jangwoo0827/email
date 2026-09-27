@@ -1,8 +1,7 @@
-import { redirectUrl, disconnect } from './gmail.js';
 import { loadSettings, saveSettings, isValidEmail, buildMail, MAX_RECIPIENTS } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
-const TEXT_FIELDS = ['quietStart', 'quietEnd', 'oauthClientId', 'subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
+const TEXT_FIELDS = ['quietStart', 'quietEnd', 'subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
 const CHECK_FIELDS = ['notify', 'contextMenu', 'inboxCheck', 'inboxNotify', 'notifyPreview', 'notifySticky', 'notifySilent', 'quietEnabled', 'showBadge'];
 const NUMBER_FIELDS = ['inboxInterval'];
 let recipients = [];
@@ -60,7 +59,7 @@ function collect() {
       .filter((r) => r.name || r.email), // 완전히 빈 줄은 무시
   };
   for (const k of TEXT_FIELDS) out[k] = $(k).value;
-  for (const k of ['oauthClientId', 'apiKey', 'fromEmail', 'webhookUrl']) out[k] = out[k].trim();
+  for (const k of ['apiKey', 'fromEmail', 'webhookUrl']) out[k] = out[k].trim();
   for (const k of CHECK_FIELDS) out[k] = $(k).checked;
   for (const k of NUMBER_FIELDS) out[k] = Number($(k).value);
   out.notifyMuted = [...document.querySelectorAll('#notifyAccounts input')].filter((c) => !c.checked).map((c) => c.value);
@@ -73,9 +72,6 @@ function validate(s) {
   if (badAcct) return `잘못된 계정 주소: "${badAcct}"`;
   const bad = s.recipients.find((r) => !isValidEmail(r.email));
   if (bad) return `잘못된 이메일 주소: "${bad.email || '(빈 칸)'}"`;
-  if (s.oauthClientId && !/\.apps\.googleusercontent\.com$/.test(s.oauthClientId)) {
-    return 'OAuth 클라이언트 ID는 .apps.googleusercontent.com 으로 끝나야 합니다.';
-  }
   if (s.sendMode === 'resend' || s.sendMode === 'sendgrid') {
     if (!s.apiKey) return 'API 키를 입력하세요.';
     if (!isValidEmail(s.fromEmail)) return '발신자 이메일을 올바르게 입력하세요.';
@@ -111,32 +107,6 @@ async function save() {
   return true;
 }
 
-async function renderConnected() {
-  const { connected = [] } = await chrome.storage.local.get('connected');
-  const box = $('connectedList');
-  box.textContent = connected.length ? '' : '없음 — 팝업에서 계정을 고르고 "계정 연결"을 누르세요.';
-  for (const email of connected) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.style.margin = '4px 0';
-    const b = document.createElement('button');
-    b.textContent = '연결 해제';
-    b.addEventListener('click', async () => {
-      await disconnect(email);
-      renderConnected();
-  $('inboxNotify').addEventListener('change', updateNotifyUi);
-  $('quietEnabled').addEventListener('change', updateNotifyUi);
-  $('testNotify').addEventListener('click', async () => {
-    if (!(await save())) return; // 현재 설정으로 테스트
-    await chrome.runtime.sendMessage({ type: 'TEST_NOTIFY' });
-    setStatus('테스트 알림을 보냈습니다', 'ok');
-  });
-    });
-    row.append(email, b);
-    box.append(row);
-  }
-}
-
 async function renderNotifyAccounts(muted) {
   const { accounts = [] } = await chrome.storage.local.get('accounts');
   const box = $('notifyAccounts');
@@ -161,12 +131,6 @@ function updateNotifyUi() {
 }
 
 async function init() {
-  $('redirectUrl').value = redirectUrl();
-  $('copyRedirect').addEventListener('click', async () => {
-    await navigator.clipboard.writeText(redirectUrl());
-    setStatus('리디렉션 URI 복사됨', 'ok');
-  });
-  renderConnected();
 
   const s = await loadSettings();
   recipients = s.recipients.map((r) => ({ name: r.name || '', email: r.email || '' }));

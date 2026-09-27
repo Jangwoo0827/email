@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Quick Email Sender",
-  "version": "2.3.1",
+  "version": "3.0.0",
   "description": "선택한 텍스트/링크/페이지를 등록된 이메일 주소(최대 5개)로 빠르게 보내고, Gmail 새 메일을 확인합니다.",
-  "permissions": ["identity", "alarms", "storage", "contextMenus", "notifications", "activeTab", "scripting", "tabs"],
-  "host_permissions": ["https://mail.google.com/*", "https://accounts.google.com/*", "https://gmail.googleapis.com/*", "https://www.googleapis.com/*", "https://oauth2.googleapis.com/*", "https://api.resend.com/*", "https://api.sendgrid.com/*"],
+  "permissions": ["alarms", "storage", "contextMenus", "notifications", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://mail.google.com/*", "https://api.resend.com/*", "https://api.sendgrid.com/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": {

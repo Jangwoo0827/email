@@ -1,32 +1,17 @@
 import { inboxUrl, fetchMessageBody } from './inbox.js';
-import { listMessages, getMessage, markRead, markAllRead, sendMessage } from './gmail.js';
-import { loadSettings, buildMail, isValidEmail, saveSettings, COMPOSE_MODES, gmailWebUrl } from './shared.js';
+import { loadSettings, buildMail, isValidEmail, saveSettings, buildComposeUrl } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
-const MODE_LABEL = {
-  gmail: 'Gmail 작성창',
-  outlook: 'Outlook 작성창',
-  mailto: '메일 앱',
-  resend: 'Resend 자동전송',
-  sendgrid: 'SendGrid 자동전송',
-  webhook: 'Webhook 자동전송',
-};
 const AVATAR_COLORS = ['#2563eb', '#16a34a', '#db2777', '#ea580c', '#7c3aed'];
 
 let settings;
 let accounts = []; // [{ index, email, name, photo, count, entries, checkedAt, error }]
 let inboxError = null;
-let connected = new Set(); // Gmail API로 연결된 계정 (소문자 이메일)
 let current = 0; // 선택된 계정 (u/N 순번 또는 이메일)
 let activeTabId;
-let listSeq = 0; // 늦게 도착한 목록 응답 무시용
-const apiCache = {}; // `${email}|${filter}` → 메일 목록
 let openMsg = null; // 읽고 있는 메일
-let replyCtx = null; // 답장 중이면 { threadId, inReplyTo, references }
 
 const currentAccount = () => accounts.find((a) => a.index === current);
-// 이 계정은 Gmail API로 본문 보기/바로 보내기 가능?
-const isApi = (a) => !!(a && settings.oauthClientId && connected.has(a.email.toLowerCase()));
 
 // ---------- 공통 ----------
 function msg(text) {
@@ -85,7 +70,7 @@ function renderAccounts() {
   accounts.forEach((a, pos) => {
     const b = document.createElement('button');
     b.className = 'acct' + (a.index === current ? ' active' : '');
-    b.title = a.email + (isApi(a) ? ' (연결됨)' : '');
+    b.title = a.email;
     b.innerHTML = '<span class="avatar"></span><span class="info"><span class="email"></span><span class="hint"></span></span><span class="badge"></span>';
     const av = b.querySelector('.avatar');
     if (a.photo) {
@@ -98,7 +83,7 @@ function renderAccounts() {
       av.textContent = (a.name || a.email)[0].toUpperCase();
     }
     av.style.background = AVATAR_COLORS[pos % AVATAR_COLORS.length];
-    b.querySelector('.email').textContent = (isApi(a) ? '✓ ' : '') + (a.name || a.email.split('@')[0]);
+    b.querySelector('.email').textContent = a.name || a.email.split('@')[0];
     const hint = b.querySelector('.hint');
     hint.textContent = a.error ? '다시 로그인 필요' : a.email;
     hint.classList.toggle('err', !!a.error);
@@ -118,26 +103,10 @@ function selectAccount(index) {
 }
 
 // ---------- 받은편지함 ----------
-function renderBanner(a) {
-  const show = !!a && !a.error && !isApi(a);
-  $('connectBanner').hidden = !show;
-  if (!show) return;
-  if (settings.oauthClientId) {
-    $('connectText').textContent = `${a.email}을(를) 연결하면 메일 본문을 여기서 읽고, 여기서 바로 보낼 수 있습니다.`;
-    $('connectBtn').textContent = '계정 연결';
-  } else {
-    $('connectText').textContent = '메일 본문 보기·익스텐션에서 바로 보내기를 쓰려면 설정에서 Gmail 연결(처음 1회)을 하세요.';
-    $('connectBtn').textContent = '설정 열기';
-  }
-}
-
 function renderInbox() {
   const list = $('mailList');
   const a = currentAccount();
   $('unread').textContent = a?.count ? String(a.count) : '';
-  renderBanner(a);
-  $('filter').hidden = !isApi(a);
-  $('markAll').hidden = !isApi(a) || !a.count;
   if (!settings.inboxCheck) {
     list.textContent = '';
     $('inboxInfo').textContent = '';
@@ -148,10 +117,6 @@ function renderInbox() {
     list.textContent = '';
     $('inboxInfo').textContent = inboxError ? `⚠ ${inboxError}` : '';
     list.append(msg(inboxError ? 'Chrome에서 Gmail에 로그인한 뒤 새로고침하세요.' : '확인 중…'));
-    return;
-  }
-  if (isApi(a)) {
-    if (!openMsg) renderApiList(a);
     return;
   }
   list.textContent = '';
@@ -166,48 +131,10 @@ function renderInbox() {
     list.append(msg('안 읽은 메일이 없습니다 🎉'));
     return;
   }
-  // 연결 안 된 계정: 로그인 세션으로 본문 읽기 (OAuth 불필요, 비공식)
+  // 로그인 세션으로 본문 읽기 (비공식)
   for (const e of a.entries) {
     const el = mailRow({ from: e.from, fromEmail: e.fromEmail, time: e.issued, subject: e.title, summary: e.summary, unread: true });
     el.addEventListener('click', () => openSessionReader(a, e));
-    list.append(el);
-  }
-}
-
-async function renderApiList(a) {
-  const filter = $('filter').value;
-  const cacheKey = `${a.email}|${filter}`;
-  const seq = ++listSeq;
-  if (apiCache[cacheKey]) {
-    drawApiList(a, apiCache[cacheKey]); // 새로고침 버튼을 누르면 캐시가 비워져 다시 불러옴
-    return;
-  } else {
-    $('mailList').textContent = '';
-    $('mailList').append(msg('불러오는 중…'));
-  }
-  try {
-    const items = await listMessages(a.email, { q: filter });
-    if (seq !== listSeq) return;
-    apiCache[cacheKey] = items;
-    drawApiList(a, items);
-  } catch (e) {
-    if (seq !== listSeq) return;
-    $('mailList').textContent = '';
-    $('mailList').append(msg(`⚠ ${e.message}`));
-  }
-}
-
-function drawApiList(a, items) {
-  const list = $('mailList');
-  list.textContent = '';
-  $('inboxInfo').textContent = `${a.email} · 안 읽음 ${a.count}`;
-  if (!items.length) {
-    list.append(msg($('filter').value.includes('is:unread') ? '안 읽은 메일이 없습니다 🎉' : '메일이 없습니다.'));
-    return;
-  }
-  for (const it of items) {
-    const el = mailRow({ from: it.from, fromEmail: it.fromEmail, time: it.date, subject: it.subject, summary: it.snippet, unread: it.unread });
-    el.addEventListener('click', () => openReader(a, it));
     list.append(el);
   }
 }
@@ -257,57 +184,6 @@ function clearMailBody() {
   if (root) root.innerHTML = '';
 }
 
-async function openReader(a, it) {
-  $('listPane').hidden = true;
-  $('readerPane').hidden = false;
-  $('rSubject').textContent = it.subject;
-  $('rMeta').textContent = '불러오는 중…';
-  $('rAttach').textContent = '';
-  clearMailBody();
-  openMsg = { ...it, account: a.email };
-  try {
-    const m = await getMessage(a.email, it.id);
-    if (openMsg?.id !== it.id) return;
-    openMsg = { ...m, account: a.email };
-    $('rSubject').textContent = m.subject;
-    $('rMeta').textContent = `${m.from} → ${m.to}${m.cc ? ` · 참조 ${m.cc}` : ''} · ${new Date(m.date).toLocaleString()}`;
-    $('rAttach').textContent = m.attachments.length ? `📎 첨부 ${m.attachments.map((x) => x.name).join(', ')} (Gmail에서 열기)` : '';
-    renderMailBody(m);
-    if (m.unread) {
-      await markRead(a.email, m.id);
-      it.unread = false;
-      a.count = Math.max(0, (a.count || 0) - 1);
-      renderAccounts();
-      $('unread').textContent = a.count ? String(a.count) : '';
-      chrome.runtime.sendMessage({ type: 'CHECK_INBOX' }); // 배지 갱신
-    }
-  } catch (e) {
-    $('rMeta').textContent = `⚠ ${e.message}`;
-  }
-}
-
-async function onMarkAll() {
-  const a = currentAccount();
-  if (!isApi(a)) return;
-  if (!confirm(`${a.email}의 안 읽은 메일 ${a.count}통을 모두 읽음으로 표시할까요?`)) return;
-  const btn = $('markAll');
-  btn.disabled = true;
-  btn.textContent = '처리 중…';
-  try {
-    const n = await markAllRead(a.email, (done) => (btn.textContent = `${done}통 처리…`));
-    a.count = 0;
-    for (const k of Object.keys(apiCache)) if (k.startsWith(`${a.email}|`)) delete apiCache[k];
-    $('inboxInfo').textContent = `${a.email} · ${n}통을 읽음으로 표시했습니다`;
-    renderAccounts();
-    renderInbox();
-    chrome.runtime.sendMessage({ type: 'CHECK_INBOX' }); // 배지 갱신
-  } catch (e) {
-    $('inboxInfo').textContent = `⚠ ${e.message}`;
-  }
-  btn.disabled = false;
-  btn.textContent = '전체 읽음';
-}
-
 async function openSessionReader(a, e) {
   $('listPane').hidden = true;
   $('readerPane').hidden = false;
@@ -316,7 +192,6 @@ async function openSessionReader(a, e) {
   $('rAttach').textContent = '불러오는 중…';
   clearMailBody();
   openMsg = {
-    session: true,
     id: e.id,
     link: e.link,
     account: a.index,
@@ -356,12 +231,11 @@ function htmlToText(html) {
 function startReply() {
   const m = openMsg;
   if (!m) return;
-  const src = m.replyTo || m.from;
+  const src = m.from;
   $('to').value = (/<([^>]+)>/.exec(src) || [])[1] || src.trim();
   $('subject').value = /^re:/i.test(m.subject) ? m.subject : `Re: ${m.subject}`;
   const quoted = (m.text || htmlToText(m.html)).split(/\r?\n/).map((l) => `> ${l}`).join('\n');
   $('body').value = `\n\n${new Date(m.date).toLocaleString()}, ${m.from} 작성:\n${quoted}`;
-  replyCtx = m.messageId ? { threadId: m.threadId, inReplyTo: m.messageId, references: m.references } : null;
   $('replyText').textContent = `답장: ${m.subject}`;
   $('replyInfo').hidden = false;
   showView('sendView');
@@ -370,16 +244,14 @@ function startReply() {
 }
 
 function cancelReply() {
-  replyCtx = null;
   $('replyInfo').hidden = true;
 }
 
 // ---------- 계정 불러오기 ----------
 async function loadAccounts() {
-  const s = await chrome.storage.local.get(['accounts', 'inboxError', 'connected']);
+  const s = await chrome.storage.local.get(['accounts', 'inboxError']);
   accounts = s.accounts || [];
   inboxError = s.inboxError || null;
-  connected = new Set(s.connected || []);
   // 선택했던 계정이 없어졌으면 첫 계정으로
   if (accounts.length && !currentAccount()) current = accounts[0].index;
   renderAccounts();
@@ -424,23 +296,8 @@ function renderFromLine() {
   line.textContent = '';
   const a = currentAccount();
   const b = document.createElement('b');
-  if (isApi(a)) {
-    b.textContent = a.email;
-    line.append('보내는 계정: ', b, ' — 익스텐션에서 바로 보냅니다 (왼쪽에서 변경)');
-    $('mode').textContent = 'Gmail API';
-    $('send').textContent = '보내기';
-    return;
-  }
-  $('mode').textContent = MODE_LABEL[settings.sendMode] || settings.sendMode;
-  $('send').textContent = COMPOSE_MODES.includes(settings.sendMode) ? '작성창 열기' : '바로 전송';
-  if (settings.sendMode === 'gmail') {
-    b.textContent = a ? a.email : `Gmail u/${current}`;
-    line.append('보내는 계정: ', b, ' — Gmail 작성창이 열립니다. 계정을 연결하면 여기서 바로 보낼 수 있습니다.');
-  } else if (['resend', 'sendgrid', 'webhook'].includes(settings.sendMode)) {
-    line.append(`보내는 주소: ${settings.fromEmail || '(설정 필요)'} — API 전송은 설정의 발신자 주소를 사용합니다`);
-  } else {
-    line.append(`${MODE_LABEL[settings.sendMode]}의 기본 계정으로 보냅니다`);
-  }
+  b.textContent = a ? a.email : `Gmail u/${current}`;
+  line.append('보내는 계정: ', b, ' — 보내기를 누르면 이 계정의 Gmail 작성창이 내용이 채워진 채로 열립니다 (왼쪽에서 변경)');
 }
 
 const splitEmails = (v) => v.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
@@ -475,40 +332,11 @@ async function send() {
     setStatus(!to.length ? '받는 사람 이메일을 입력하세요.' : `잘못된 주소: ${bad.join(', ')}`, 'err');
     return;
   }
-  const subject = $('subject').value;
-  const body = $('body').value;
   const a = currentAccount();
-  $('send').disabled = true;
-  setStatus('보내는 중…');
-
-  if (isApi(a)) {
-    try {
-      await sendMessage(a.email, { to, subject, body, ...(replyCtx || {}) });
-      await rememberRecipients(to);
-      setStatus(`${a.email}에서 보냈습니다 ✓`, 'ok');
-      $('to').value = '';
-      $('subject').value = '';
-      $('body').value = '';
-      cancelReply();
-    } catch (e) {
-      setStatus(e.message, 'err');
-    }
-    $('send').disabled = false;
-    return;
-  }
-
-  const res = await chrome.runtime.sendMessage({
-    type: 'SEND_EMAIL',
-    payload: { to, subject, body, tabId: activeTabId, account: current },
-  });
-  if (res?.ok) {
-    await rememberRecipients(to);
-    setStatus('완료', 'ok');
-    setTimeout(() => window.close(), 600);
-  } else {
-    setStatus(res?.error || '실패', 'err');
-    $('send').disabled = false;
-  }
+  const account = a ? a.index : current;
+  await rememberRecipients(to);
+  // Gmail 작성창을 새 탭으로 열면 팝업은 자동으로 닫힘
+  chrome.tabs.create({ url: buildComposeUrl('gmail', to, $('subject').value, $('body').value, account) });
 }
 
 async function initSend() {
@@ -551,26 +379,13 @@ async function init() {
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openGmail').addEventListener('click', () => chrome.tabs.create({ url: inboxUrl(currentAccount()?.email ?? current) }));
-  $('refresh').addEventListener('click', () => {
-    for (const k of Object.keys(apiCache)) delete apiCache[k];
-    refresh();
-  });
-  $('filter').addEventListener('change', () => renderInbox());
+  $('refresh').addEventListener('click', refresh);
   $('back').addEventListener('click', () => closeReader());
-  $('markAll').addEventListener('click', onMarkAll);
   $('reply').addEventListener('click', startReply);
   $('openInGmail').addEventListener('click', () => {
     if (!openMsg) return;
-    const url = openMsg.session ? openMsg.link : gmailWebUrl(openMsg.account, '', `#all/${openMsg.id}`);
-    chrome.tabs.create({ url });
+    chrome.tabs.create({ url: openMsg.link });
   });
-  $('connectBtn').addEventListener('click', () => {
-    const a = currentAccount();
-    if (!settings.oauthClientId) return chrome.runtime.openOptionsPage();
-    // 로그인 창이 뜨면 이 팝업은 닫힘 → 연결 후 팝업을 다시 열면 됨
-    chrome.runtime.sendMessage({ type: 'CONNECT_ACCOUNT', email: a?.email });
-  });
-
   await loadAccounts(); // 캐시 먼저 표시
   refresh();
   initSend();

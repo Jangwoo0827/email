@@ -57,9 +57,6 @@
     .mail { cursor: pointer; }
     .mail.unread .from, .mail.unread .subj { font-weight: 700; }
     .mail:not(.unread) .subj { color: var(--muted); }
-    .banner { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--field); font-size: 12px; }
-    .banner span { flex: 1; }
-    .banner button { white-space: nowrap; }
     .reader-bar { margin-top: 8px; }
     .reader-bar .grow { flex: 1; }
     #rSubject { font-size: 15px; margin: 10px 0 4px; word-break: break-word; }
@@ -87,19 +84,10 @@
     </nav>
 
     <section id="inboxView" hidden>
-      <div class="banner" id="connectBanner" hidden>
-        <span id="connectText"></span>
-        <button class="primary" id="connectBtn">계정 연결</button>
-      </div>
       <div id="listPane">
         <div class="inbox-bar">
           <span class="hint" id="inboxInfo"></span>
           <div class="row">
-            <select id="filter" hidden>
-              <option value="in:inbox is:unread">안 읽음</option>
-              <option value="in:inbox">전체</option>
-            </select>
-            <button id="markAll" hidden>전체 읽음</button>
             <button class="primary" id="openGmail">Gmail 열기</button>
           </div>
         </div>
@@ -134,10 +122,10 @@
         <textarea id="body" rows="8"></textarea>
 
         <footer>
-          <span class="hint" id="mode"></span>
+          <span class="hint">Gmail 작성창에서 최종 확인 후 보내기</span>
           <div class="row">
             <span class="status" id="status"></span>
-            <button class="primary" id="send">전송</button>
+            <button class="primary" id="send">보내기</button>
           </div>
         </footer>
       </div>

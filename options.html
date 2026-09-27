@@ -67,22 +67,6 @@
     </div>
   </div>
 
-  <h2>Gmail 연결 (메일 본문 보기 · 익스텐션에서 바로 보내기)</h2>
-  <p class="hint">Google 공식 Gmail API를 씁니다. 처음 한 번만 Google Cloud에서 OAuth 클라이언트 ID를 만들어 아래에 붙여넣으면 됩니다(무료).</p>
-  <ol class="hint" style="padding-left:18px">
-    <li><a href="https://console.cloud.google.com/projectcreate" target="_blank">Google Cloud 콘솔</a>에서 새 프로젝트 만들기</li>
-    <li><a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank">Gmail API</a> → <b>사용</b></li>
-    <li><a href="https://console.cloud.google.com/auth/overview" target="_blank">OAuth 동의 화면(Google 인증 플랫폼)</a> 구성 → 대상 <b>외부</b> → <b>테스트 사용자</b>에 연결할 Gmail 주소들을 모두 추가</li>
-    <li><a href="https://console.cloud.google.com/apis/credentials" target="_blank">사용자 인증 정보</a> → <b>OAuth 클라이언트 ID 만들기</b> → 유형 <b>웹 애플리케이션</b> → <b>승인된 리디렉션 URI</b>에 아래 주소 추가</li>
-    <li>만들어진 <b>클라이언트 ID</b>를 아래에 붙여넣고 저장 → 팝업에서 계정 선택 후 <b>계정 연결</b></li>
-  </ol>
-  <label>승인된 리디렉션 URI <span class="hint">(복사해서 4단계에 붙여넣기)</span></label>
-  <div class="row"><input type="text" id="redirectUrl" readonly><button id="copyRedirect">복사</button></div>
-  <label for="oauthClientId">OAuth 클라이언트 ID</label>
-  <input type="text" id="oauthClientId" placeholder="1234567890-xxxx.apps.googleusercontent.com" spellcheck="false">
-  <label>연결된 계정</label>
-  <div id="connectedList" class="hint">없음</div>
-
   <h2>알림</h2>
   <label class="check"><input type="checkbox" id="inboxNotify"> 새 메일이 오면 알림</label>
   <div id="notifyOpts">
