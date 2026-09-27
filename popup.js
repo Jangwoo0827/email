@@ -16,7 +16,6 @@ let settings;
 let accounts = []; // [{ index, email, count, entries, checkedAt }]
 let inboxError = null;
 let current = 0; // 선택된 계정의 Gmail 순번 (u/N)
-let checked = new Set();
 let activeTabId;
 
 const currentAccount = () => accounts.find((a) => a.index === current);
@@ -58,10 +57,20 @@ function renderAccounts() {
     b.title = a.email;
     b.innerHTML = '<span class="avatar"></span><span class="info"><div class="email"></div><div class="hint"></div></span><span class="badge"></span>';
     const av = b.querySelector('.avatar');
-    av.textContent = (a.email[0] || '?').toUpperCase();
+    if (a.photo) {
+      const img = document.createElement('img');
+      img.src = a.photo;
+      img.alt = '';
+      img.onerror = () => { img.remove(); av.textContent = (a.name || a.email)[0].toUpperCase(); };
+      av.append(img);
+    } else {
+      av.textContent = (a.name || a.email)[0].toUpperCase();
+    }
     av.style.background = AVATAR_COLORS[a.index % AVATAR_COLORS.length];
-    b.querySelector('.email').textContent = a.email.split('@')[0];
-    b.querySelector('.hint').textContent = '@' + (a.email.split('@')[1] || '');
+    b.querySelector('.email').textContent = a.name || a.email.split('@')[0];
+    const hint = b.querySelector('.hint');
+    hint.textContent = a.error ? '다시 로그인 필요' : a.email;
+    hint.classList.toggle('err', !!a.error);
     b.querySelector('.badge').textContent = a.count ? String(a.count) : '';
     b.addEventListener('click', () => selectAccount(a.index));
     box.append(b);
@@ -100,6 +109,11 @@ function renderInbox() {
   if (!a) {
     $('inboxInfo').textContent = inboxError ? `⚠ ${inboxError}` : '';
     list.append(msg(inboxError ? 'Chrome에서 Gmail에 로그인한 뒤 새로고침하세요.' : '확인 중…'));
+    return;
+  }
+  if (a.error) {
+    $('inboxInfo').textContent = `${a.email} · ⚠ ${a.error}`;
+    list.append(msg('이 계정의 Gmail 세션을 읽을 수 없습니다. "Gmail 열기"로 이 계정에 다시 로그인한 뒤 새로고침하세요.'));
     return;
   }
   const when = a.checkedAt ? new Date(a.checkedAt).toLocaleTimeString() : '';
@@ -183,82 +197,65 @@ function renderFromLine() {
   }
 }
 
-function renderRecipients(list) {
-  const box = $('recipients');
+const splitEmails = (v) => v.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+
+// 자동완성: 최근 보낸 주소 + 설정에 저장한 주소
+async function fillSuggestions() {
+  const { recentTo = [] } = await chrome.storage.local.get('recentTo');
+  const saved = settings.recipients.map((r) => r.email).filter(isValidEmail);
+  const box = $('toSuggest');
   box.textContent = '';
-  list.forEach((r, i) => {
-    const row = document.createElement('label');
-    row.className = 'check recipient';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = checked.has(i);
-    cb.addEventListener('change', () => {
-      cb.checked ? checked.add(i) : checked.delete(i);
-      onCheckedChange(list);
-    });
-    const text = document.createElement('span');
-    text.innerHTML = '<b></b> <span class="hint"></span>';
-    text.querySelector('b').textContent = r.name || r.email;
-    text.querySelector('.hint').textContent = r.name ? r.email : '';
-    row.append(cb, text);
-    box.appendChild(row);
-  });
-  onCheckedChange(list, false);
+  for (const email of [...new Set([...recentTo, ...saved])]) {
+    const o = document.createElement('option');
+    o.value = email;
+    const r = settings.recipients.find((x) => x.email === email);
+    if (r?.name) o.label = r.name;
+    box.append(o);
+  }
 }
 
-function onCheckedChange(list, persist = true) {
-  const all = $('checkAll');
-  all.checked = checked.size === list.length;
-  all.indeterminate = checked.size > 0 && checked.size < list.length;
-  $('send').disabled = checked.size === 0;
-  $('count').textContent = checked.size ? `${checked.size}명 선택` : '받는 사람을 체크하세요';
-  if (persist) saveSettings({ checkedRecipients: [...checked] }); // 마지막 선택 기억
+async function rememberRecipients(list) {
+  const { recentTo = [] } = await chrome.storage.local.get('recentTo');
+  await chrome.storage.local.set({ recentTo: [...new Set([...list, ...recentTo])].slice(0, 20) });
 }
 
 async function initSend() {
-  const list = settings.recipients.filter((r) => isValidEmail(r.email));
-  $('goOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('mode').textContent = MODE_LABEL[settings.sendMode] || settings.sendMode;
   $('send').textContent = COMPOSE_MODES.includes(settings.sendMode) ? '작성창 열기' : '바로 전송';
-
-  if (!list.length) {
-    $('empty').style.display = 'block';
-    $('compose').hidden = true;
-    return;
-  }
-  checked = new Set((settings.checkedRecipients || [0]).filter((i) => i < list.length));
-  if (!checked.size) checked.add(0);
-  renderRecipients(list);
-  $('checkAll').addEventListener('change', (e) => {
-    checked = new Set(e.target.checked ? list.map((_, i) => i) : []);
-    renderRecipients(list);
-    saveSettings({ checkedRecipients: [...checked] });
-  });
+  fillSuggestions();
 
   const ctx = await getPageContext();
   const { subject, body } = buildMail(settings, ctx);
   $('subject').value = subject;
   $('body').value = body;
 
+  $('to').addEventListener('input', () => {
+    $('to').style.borderColor = '';
+    setStatus('');
+  });
+
   $('send').addEventListener('click', async () => {
+    const to = splitEmails($('to').value);
+    const bad = to.filter((e) => !isValidEmail(e));
+    if (!to.length || bad.length) {
+      $('to').style.borderColor = 'var(--danger)';
+      $('to').focus();
+      setStatus(!to.length ? '받는 사람 이메일을 입력하세요.' : `잘못된 주소: ${bad.join(', ')}`, 'err');
+      return;
+    }
     $('send').disabled = true;
     setStatus('전송 중…');
     const res = await chrome.runtime.sendMessage({
       type: 'SEND_EMAIL',
-      payload: {
-        to: [...checked].sort().map((i) => list[i].email),
-        subject: $('subject').value,
-        body: $('body').value,
-        tabId: activeTabId,
-        account: current,
-      },
+      payload: { to, subject: $('subject').value, body: $('body').value, tabId: activeTabId, account: current },
     });
     if (res?.ok) {
+      await rememberRecipients(to);
       setStatus('완료', 'ok');
       setTimeout(() => window.close(), 600);
     } else {
       setStatus(res?.error || '실패', 'err');
-      $('send').disabled = checked.size === 0;
+      $('send').disabled = false;
     }
   });
 
@@ -273,7 +270,12 @@ async function init() {
   settings = await loadSettings();
   current = settings.gmailAccount || 0;
 
-  for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => showView(t.dataset.view));
+  for (const t of document.querySelectorAll('.tab')) {
+    t.addEventListener('click', () => {
+      showView(t.dataset.view);
+      if (t.dataset.view === 'sendView') $('to').focus();
+    });
+  }
   let view = 'inboxView';
   try { view = localStorage.getItem('qes-view') || view; } catch { /* 무시 */ }
   showView(view);

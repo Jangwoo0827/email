@@ -33,11 +33,9 @@
     .tab.active { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
     .from-line { margin-top: 10px; font-size: 12px; color: var(--muted); }
     .from-line b { color: var(--fg); }
-    #recipients { border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; }
-    .recipient { margin: 0; padding: 6px 10px; cursor: pointer; }
-    .recipient + .recipient { border-top: 1px solid var(--border); }
-    .recipient:hover { background: var(--field); }
-    #empty { display: none; margin-top: 10px; padding: 12px; border: 1px dashed var(--border); border-radius: 8px; text-align: center; }
+    .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .acct .err { color: var(--danger); }
+    .acct.active .err { color: inherit; }
     footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
 
     .inbox-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
@@ -79,14 +77,10 @@
 
     <section id="sendView" hidden>
       <div class="from-line" id="fromLine"></div>
-      <div id="empty">등록된 수신자가 없습니다.<br><a id="goOptions">설정에서 이메일을 추가하세요</a></div>
-
       <div id="compose">
-        <div class="row" style="justify-content:space-between;margin-top:10px">
-          <label class="check" style="margin:0"><input type="checkbox" id="checkAll"> <b>받는 사람</b></label>
-          <span class="hint" id="count"></span>
-        </div>
-        <div id="recipients"></div>
+        <label for="to">받는 사람 <span class="hint">여러 명은 쉼표(,)로 구분</span></label>
+        <input type="text" id="to" list="toSuggest" placeholder="name@example.com" autocomplete="off" spellcheck="false">
+        <datalist id="toSuggest"></datalist>
 
         <label for="subject">제목</label>
         <input type="text" id="subject">
