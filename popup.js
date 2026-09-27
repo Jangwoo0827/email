@@ -1,6 +1,6 @@
 import { inboxUrl } from './inbox.js';
 import { listMessages, getMessage, markRead, sendMessage } from './gmail.js';
-import { loadSettings, buildMail, isValidEmail, saveSettings, COMPOSE_MODES } from './shared.js';
+import { loadSettings, buildMail, isValidEmail, saveSettings, COMPOSE_MODES, gmailWebUrl } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
 const MODE_LABEL = {
@@ -499,7 +499,7 @@ async function init() {
   $('back').addEventListener('click', () => closeReader());
   $('reply').addEventListener('click', startReply);
   $('openInGmail').addEventListener('click', () => {
-    if (openMsg) chrome.tabs.create({ url: `https://mail.google.com/mail/u/${encodeURIComponent(openMsg.account)}/#all/${openMsg.id}` });
+    if (openMsg) chrome.tabs.create({ url: gmailWebUrl(openMsg.account, '', `#all/${openMsg.id}`) });
   });
   $('connectBtn').addEventListener('click', () => {
     const a = currentAccount();

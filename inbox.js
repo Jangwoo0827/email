@@ -1,3 +1,5 @@
+import { gmailWebUrl } from './shared.js';
+
 // Gmail 받은편지함 확인 (Atom 피드 — 브라우저의 Gmail 로그인 세션을 그대로 사용, OAuth 불필요)
 // service worker에는 DOMParser가 없으므로 정규식으로 파싱
 
@@ -12,7 +14,7 @@ const decode = (s = '') =>
 const tag = (xml, name) => decode((new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`).exec(xml) || [])[1]);
 
 export function inboxUrl(account = 0) {
-  return `https://mail.google.com/mail/u/${u(account)}/#inbox`;
+  return gmailWebUrl(account, '', '#inbox');
 }
 
 export async function fetchInbox(account = 0) {

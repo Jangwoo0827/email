@@ -72,6 +72,16 @@ export function buildMail(settings, ctx) {
   };
 }
 
+// Gmail 웹 주소. account가 순번이면 /mail/u/N/, 이메일이면 ?authuser=이메일
+// (/mail/u/<이메일>/ 경로는 Gmail이 404 "Temporary Error"를 내는 경우가 있음)
+export function gmailWebUrl(account = 0, query = '', hash = '') {
+  const a = String(account);
+  if (a.includes('@')) {
+    return `https://mail.google.com/mail/?authuser=${encodeURIComponent(a)}${query ? `&${query}` : ''}${hash}`;
+  }
+  return `https://mail.google.com/mail/u/${Number(a) || 0}/${query ? `?${query}` : ''}${hash}`;
+}
+
 export const COMPOSE_MODES = ['gmail', 'outlook', 'mailto'];
 
 // 메일 작성창 URL (to: 이메일 배열)
@@ -80,7 +90,7 @@ export function buildComposeUrl(mode, to, subject, body, account = 0) {
   const enc = encodeURIComponent;
   const list = to.join(',');
   if (mode === 'gmail') {
-    return `https://mail.google.com/mail/u/${enc(String(account))}/?view=cm&fs=1&to=${enc(list)}&su=${enc(subject)}&body=${enc(body)}`;
+    return gmailWebUrl(account, `view=cm&fs=1&to=${enc(list)}&su=${enc(subject)}&body=${enc(body)}`);
   }
   if (mode === 'outlook') {
     return `https://outlook.live.com/mail/0/deeplink/compose?to=${enc(list)}&subject=${enc(subject)}&body=${enc(body)}`;
