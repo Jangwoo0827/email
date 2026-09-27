@@ -2,7 +2,8 @@ import { loadSettings, saveSettings, isValidEmail, buildMail, MAX_RECIPIENTS } f
 
 const $ = (id) => document.getElementById(id);
 const TEXT_FIELDS = ['subjectTemplate', 'bodyTemplate', 'sendMode', 'apiKey', 'fromEmail', 'webhookUrl'];
-const CHECK_FIELDS = ['notify', 'contextMenu'];
+const CHECK_FIELDS = ['notify', 'contextMenu', 'inboxCheck', 'inboxNotify'];
+const NUMBER_FIELDS = ['inboxInterval', 'gmailAccount'];
 let recipients = [];
 
 function setStatus(text, kind = '') {
@@ -60,6 +61,7 @@ function collect() {
   for (const k of TEXT_FIELDS) out[k] = $(k).value;
   for (const k of ['apiKey', 'fromEmail', 'webhookUrl']) out[k] = out[k].trim();
   for (const k of CHECK_FIELDS) out[k] = $(k).checked;
+  for (const k of NUMBER_FIELDS) out[k] = Number($(k).value);
   return out;
 }
 
@@ -106,6 +108,7 @@ async function init() {
   recipients = s.recipients.map((r) => ({ name: r.name || '', email: r.email || '' }));
   for (const k of TEXT_FIELDS) $(k).value = s[k] ?? '';
   for (const k of CHECK_FIELDS) $(k).checked = !!s[k];
+  for (const k of NUMBER_FIELDS) $(k).value = String(s[k]);
   if (!recipients.length) recipients.push({ name: '', email: '' });
   renderRecipients();
   updateModeClass();

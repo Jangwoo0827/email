@@ -1,3 +1,4 @@
+import { fetchInbox, inboxUrl } from './inbox.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -41,11 +42,93 @@ function rebuildMenus() {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   await rebuildMenus();
+  await scheduleInbox();
   if (details.reason === 'install') chrome.runtime.openOptionsPage();
 });
-chrome.runtime.onStartup.addListener(rebuildMenus);
+chrome.runtime.onStartup.addListener(() => {
+  rebuildMenus();
+  scheduleInbox();
+});
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && (changes.recipients || changes.contextMenu)) rebuildMenus();
+  if (area !== 'sync') return;
+  if (changes.recipients || changes.contextMenu) rebuildMenus();
+  if (changes.inboxCheck || changes.inboxInterval || changes.gmailAccount) scheduleInbox();
+});
+
+// ---------- 받은편지함 확인 ----------
+const INBOX_ALARM = 'qes-inbox';
+
+async function scheduleInbox() {
+  const s = await loadSettings();
+  await chrome.alarms.clear(INBOX_ALARM);
+  if (!s.inboxCheck) {
+    await chrome.action.setBadgeText({ text: '' });
+    await chrome.storage.local.remove('inbox');
+    return;
+  }
+  const minutes = Math.max(1, Number(s.inboxInterval) || 5);
+  chrome.alarms.create(INBOX_ALARM, { periodInMinutes: minutes });
+  checkInbox();
+}
+
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === INBOX_ALARM) checkInbox();
+});
+
+async function checkInbox() {
+  const s = await loadSettings();
+  if (!s.inboxCheck) return { ok: false, error: '받은편지함 확인이 꺼져 있습니다.' };
+  const { inbox: prev, seenIds = [] } = await chrome.storage.local.get(['inbox', 'seenIds']);
+  try {
+    const inbox = await fetchInbox(s.gmailAccount);
+    const seen = new Set(seenIds);
+    const fresh = inbox.entries.filter((e) => !seen.has(e.id));
+    // 첫 확인(이전 기록 없음)에는 기존 안 읽은 메일로 알림 폭탄을 보내지 않음
+    if (prev && s.inboxNotify && fresh.length) notifyNewMail(fresh, s.gmailAccount);
+
+    await chrome.storage.local.set({
+      inbox: { ...inbox, error: null },
+      seenIds: [...new Set([...seenIds, ...inbox.entries.map((e) => e.id)])].slice(-200),
+    });
+    await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+    await chrome.action.setBadgeText({ text: inbox.count ? String(inbox.count > 999 ? '999+' : inbox.count) : '' });
+    return { ok: true, inbox };
+  } catch (e) {
+    await chrome.storage.local.set({ inbox: { ...(prev || { entries: [], count: 0 }), error: e.message, checkedAt: Date.now() } });
+    await chrome.action.setBadgeBackgroundColor({ color: '#6b7280' });
+    await chrome.action.setBadgeText({ text: '?' });
+    return { ok: false, error: e.message };
+  }
+}
+
+function notifyNewMail(fresh, account) {
+  const id = `qes-mail-${Date.now()}`;
+  const opts = {
+    iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+    title: fresh.length === 1 ? `새 메일: ${fresh[0].from}` : `새 메일 ${fresh.length}통`,
+    message: fresh.length === 1 ? `${fresh[0].title}
+${fresh[0].summary}`.slice(0, 250) : '',
+    priority: 1,
+  };
+  if (fresh.length === 1) {
+    chrome.notifications.create(id, { type: 'basic', ...opts });
+  } else {
+    chrome.notifications.create(id, {
+      type: 'list',
+      ...opts,
+      message: '',
+      items: fresh.slice(0, 5).map((e) => ({ title: e.from, message: e.title })),
+    });
+  }
+  mailLinks.set(id, fresh.length === 1 ? fresh[0].link : inboxUrl(account));
+}
+
+const mailLinks = new Map();
+chrome.notifications.onClicked.addListener((id) => {
+  if (!id.startsWith('qes-mail-')) return;
+  chrome.tabs.create({ url: mailLinks.get(id) || inboxUrl(0) });
+  chrome.notifications.clear(id);
+  mailLinks.delete(id);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -120,6 +203,10 @@ function notify(s, title, message) {
 
 // popup → background 메시지
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'CHECK_INBOX') {
+    checkInbox().then(sendResponse);
+    return true;
+  }
   if (msg?.type === 'SEND_EMAIL') {
     sendEmail(msg.payload).then(sendResponse);
     return true; // 비동기 응답

@@ -1,3 +1,4 @@
+import { inboxUrl } from './inbox.js';
 import { loadSettings, saveSettings, buildMail, isValidEmail } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
@@ -122,4 +123,94 @@ async function init() {
   });
 }
 
+// ---------- 탭 ----------
+function showView(id) {
+  for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.view === id);
+  for (const v of ['sendView', 'inboxView']) $(v).hidden = v !== id;
+  try { localStorage.setItem('qes-view', id); } catch { /* 무시 */ }
+}
+
+// ---------- 받은편지함 ----------
+function timeAgo(iso) {
+  const t = Date.parse(iso);
+  if (!t) return '';
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return '방금';
+  if (m < 60) return `${m}분 전`;
+  if (m < 60 * 24) return `${Math.round(m / 60)}시간 전`;
+  return new Date(t).toLocaleDateString();
+}
+
+function msg(text) {
+  const d = document.createElement('div');
+  d.className = 'msg';
+  d.textContent = text;
+  return d;
+}
+
+function renderInbox(inbox, s) {
+  const list = $('mailList');
+  list.textContent = '';
+  if (!s.inboxCheck) {
+    $('unread').textContent = '';
+    $('inboxInfo').textContent = '';
+    list.append(msg('받은편지함 확인이 꺼져 있습니다. 설정에서 켜세요.'));
+    return;
+  }
+  if (!inbox) {
+    list.append(msg('확인 중…'));
+    return;
+  }
+  $('unread').textContent = inbox.count ? String(inbox.count) : '';
+  const when = inbox.checkedAt ? new Date(inbox.checkedAt).toLocaleTimeString() : '';
+  $('inboxInfo').textContent = inbox.error
+    ? `⚠ ${inbox.error}`
+    : `${inbox.account || ''} · 안 읽음 ${inbox.count} · ${when}`;
+  if (inbox.error && !inbox.entries?.length) {
+    list.append(msg('Chrome에서 Gmail에 로그인한 뒤 새로고침하세요.'));
+    return;
+  }
+  if (!inbox.entries.length) {
+    list.append(msg('안 읽은 메일이 없습니다 🎉'));
+    return;
+  }
+  for (const e of inbox.entries) {
+    const a = document.createElement('a');
+    a.className = 'mail';
+    a.href = e.link;
+    a.target = '_blank';
+    a.title = e.fromEmail;
+    a.innerHTML =
+      '<div class="head"><span class="from"></span><span class="time"></span></div><div class="subj"></div><div class="sum"></div>';
+    a.querySelector('.from').textContent = e.from;
+    a.querySelector('.time').textContent = timeAgo(e.issued);
+    a.querySelector('.subj').textContent = e.title;
+    a.querySelector('.sum').textContent = e.summary;
+    list.append(a);
+  }
+}
+
+async function initInbox() {
+  const s = await loadSettings();
+  $('openGmail').addEventListener('click', () => chrome.tabs.create({ url: inboxUrl(s.gmailAccount) }));
+  $('refresh').addEventListener('click', refresh);
+  const { inbox } = await chrome.storage.local.get('inbox');
+  renderInbox(inbox, s); // 캐시 먼저 표시
+
+  async function refresh() {
+    if (!s.inboxCheck) return;
+    $('refresh').disabled = true;
+    await chrome.runtime.sendMessage({ type: 'CHECK_INBOX' });
+    const { inbox } = await chrome.storage.local.get('inbox');
+    renderInbox(inbox, s);
+    $('refresh').disabled = false;
+  }
+  refresh();
+}
+
+for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => showView(t.dataset.view));
+let savedView = 'sendView';
+try { savedView = localStorage.getItem('qes-view') || savedView; } catch { /* 무시 */ }
+showView(savedView);
+initInbox();
 init();

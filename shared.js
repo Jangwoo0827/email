@@ -10,6 +10,10 @@ export const DEFAULT_SETTINGS = {
   bodyTemplate: '선택한 텍스트: {{selected_text}}\n출처 URL: {{page_url}}\n일시: {{timestamp}}',
   notify: true,
   contextMenu: true,
+  inboxCheck: true, // Gmail 받은편지함 새 메일 확인
+  inboxInterval: 5, // 분
+  inboxNotify: true, // 새 메일 알림
+  gmailAccount: 0, // Chrome에 로그인된 Gmail 계정 순번 (/mail/u/N)
   sendMode: 'gmail', // 'gmail' | 'outlook' | 'mailto' | 'resend' | 'sendgrid' | 'webhook'
 };
 
