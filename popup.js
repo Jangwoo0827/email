@@ -1,5 +1,5 @@
 import { inboxUrl, fetchMessageBody } from './inbox.js';
-import { loadSettings, buildMail, isValidEmail, saveSettings, buildComposeUrl } from './shared.js';
+import { loadSettings, buildMail, isValidEmail, saveSettings, buildComposeUrl, gmailWebUrl } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
 const AVATAR_COLORS = ['#2563eb', '#16a34a', '#db2777', '#ea580c', '#7c3aed'];
@@ -10,6 +10,9 @@ let inboxError = null;
 let current = 0; // 선택된 계정 (u/N 순번 또는 이메일)
 let activeTabId;
 let openMsg = null; // 읽고 있는 메일
+const folderCache = {}; // `${계정}|${폴더}` → { mails, page, hasMore }
+let folderSeq = 0; // 늦게 도착한 응답 무시용
+let folderPending = ''; // 불러오는 중인 목록 (중복 요청 방지)
 
 const currentAccount = () => accounts.find((a) => a.index === current);
 
@@ -34,7 +37,7 @@ function showView(id) {
 
 function timeAgo(v) {
   const t = typeof v === 'number' ? v : Date.parse(v);
-  if (!t) return '';
+  if (!t) return typeof v === 'string' ? v : '';
   const m = Math.round((Date.now() - t) / 60000);
   if (m < 1) return '방금';
   if (m < 60) return `${m}분 전`;
@@ -126,6 +129,11 @@ function renderInbox() {
     list.append(msg('이 계정의 Gmail 세션을 읽을 수 없습니다. "Gmail 열기"로 이 계정에 다시 로그인한 뒤 새로고침하세요.'));
     return;
   }
+  if ($('folder').value !== 'unread') {
+    renderFolder(a);
+    return;
+  }
+  $('moreRow').hidden = true;
   const when = a.checkedAt ? new Date(a.checkedAt).toLocaleTimeString() : '';
   $('inboxInfo').textContent = `${a.email} · 안 읽음 ${a.count} · ${when}`;
   if (!a.entries.length) {
@@ -185,15 +193,87 @@ function clearMailBody() {
   if (root) root.innerHTML = '';
 }
 
+const FOLDER_LABEL = { inbox: '받은편지함', all: '모든 메일', sent: '보낸 메일', starred: '별표' };
+
+async function renderFolder(a, { more = false, force = false } = {}) {
+  const folder = $('folder').value;
+  const key = `${a.email}|${folder}`;
+  const list = $('mailList');
+  const cached = folderCache[key];
+  if (cached && !more && !force) {
+    drawFolder(a, folder, cached);
+    return;
+  }
+  if (!more && !force && folderPending === key) return; // 이미 불러오는 중
+  const page = more && cached ? cached.page + 1 : 1;
+  const seq = ++folderSeq;
+  folderPending = key;
+  if (more) {
+    $('more').disabled = true;
+    $('more').textContent = '불러오는 중…';
+  } else {
+    list.textContent = '';
+    $('moreRow').hidden = true;
+    list.append(msg('Gmail에서 불러오는 중… (잠깐 최소화된 창이 열렸다 닫힙니다)'));
+  }
+  const res = await chrome.runtime.sendMessage({ type: 'LIST_ALL_MAIL', account: a.index, folder, page });
+  if (seq !== folderSeq) return;
+  folderPending = '';
+  $('more').disabled = false;
+  $('more').textContent = '더 보기';
+  if (!res?.ok) {
+    if (!more) list.textContent = '';
+    list.append(msg(`⚠ ${res?.error || '불러오지 못했습니다.'} — "Gmail 열기"로 확인하세요.`));
+    return;
+  }
+  const data = {
+    mails: more && cached ? [...cached.mails, ...res.mails] : res.mails,
+    page,
+    hasMore: res.hasMore,
+  };
+  folderCache[key] = data;
+  drawFolder(a, folder, data);
+}
+
+function drawFolder(a, folder, data) {
+  const list = $('mailList');
+  list.textContent = '';
+  $('inboxInfo').textContent = `${a.email} · ${FOLDER_LABEL[folder]} ${data.mails.length}통${data.hasMore ? '+' : ''}`;
+  $('moreRow').hidden = !data.hasMore;
+  if (!data.mails.length) {
+    list.append(msg('메일이 없습니다.'));
+    return;
+  }
+  for (const m of data.mails) {
+    const el = mailRow({ from: m.from, fromEmail: m.fromEmail, time: m.date, subject: m.subject, summary: m.snippet, unread: m.unread });
+    el.title = [m.fromEmail, m.dateFull].filter(Boolean).join(' · ');
+    el.addEventListener('click', () => {
+      m.unread = false;
+      openSessionReader(a, {
+        id: '',
+        hex: m.hex,
+        link: gmailWebUrl(a.index, '', `#all/${m.threadHex || m.hex}`),
+        title: m.subject,
+        from: m.from,
+        fromEmail: m.fromEmail,
+        dateText: m.dateFull || m.date,
+        summary: m.snippet,
+      });
+    });
+    list.append(el);
+  }
+}
+
 async function openSessionReader(a, e) {
   $('listPane').hidden = true;
   $('readerPane').hidden = false;
   $('rSubject').textContent = e.title;
-  $('rMeta').textContent = `${e.from}${e.fromEmail ? ` <${e.fromEmail}>` : ''} · ${new Date(Date.parse(e.issued) || Date.now()).toLocaleString()}`;
+  const when = e.dateText || new Date(Date.parse(e.issued) || Date.now()).toLocaleString();
+  $('rMeta').textContent = `${e.from}${e.fromEmail ? ` <${e.fromEmail}>` : ''} · ${when}`;
   $('rAttach').textContent = '불러오는 중…';
   clearMailBody();
   openMsg = {
-    id: e.id,
+    id: e.id || e.hex,
     link: e.link,
     account: a.index,
     subject: e.title,
@@ -204,13 +284,13 @@ async function openSessionReader(a, e) {
   };
   try {
     const body = await fetchMessageBody(a.index, e);
-    if (openMsg?.id !== e.id) return;
+    if (openMsg?.id !== (e.id || e.hex)) return;
     openMsg.html = body.html;
     openMsg.text = body.text;
     $('rAttach').textContent = '';
     renderMailBody({ html: body.html, text: body.text });
   } catch (err) {
-    if (openMsg?.id !== e.id) return;
+    if (openMsg?.id !== (e.id || e.hex)) return;
     $('rAttach').textContent = `⚠ ${err.message} 미리보기만 표시합니다. 전체 내용은 "Gmail에서 열기"를 누르세요.`;
     renderMailBody({ text: e.summary });
   }
@@ -377,10 +457,24 @@ async function init() {
   let view = 'inboxView';
   try { view = localStorage.getItem('qes-view') || view; } catch { /* 무시 */ }
   showView(view);
+  try { $('folder').value = localStorage.getItem('qes-folder') || 'unread'; } catch { /* 무시 */ }
+  if (!$('folder').value) $('folder').value = 'unread';
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openGmail').addEventListener('click', () => chrome.tabs.create({ url: inboxUrl(currentAccount()?.email ?? current) }));
-  $('refresh').addEventListener('click', refresh);
+  $('refresh').addEventListener('click', () => {
+    const a = currentAccount();
+    if (a && $('folder').value !== 'unread') renderFolder(a, { force: true });
+    refresh();
+  });
+  $('folder').addEventListener('change', () => {
+    try { localStorage.setItem('qes-folder', $('folder').value); } catch { /* 무시 */ }
+    renderInbox();
+  });
+  $('more').addEventListener('click', () => {
+    const a = currentAccount();
+    if (a) renderFolder(a, { more: true });
+  });
   $('markAll').addEventListener('click', () => {
     const a = currentAccount();
     if (!a || !confirm(`${a.email}의 안 읽은 메일 ${a.count}통을 모두 읽음으로 표시할까요?\n(Gmail 탭이 열리고 자동으로 처리합니다)`)) return;

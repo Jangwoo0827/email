@@ -1,5 +1,6 @@
 import { fetchAllAccounts, inboxUrl } from './inbox.js';
 import { markAllReadViaGmail } from './markall.js';
+import { listAllMail } from './allmail.js';
 import { loadSettings, buildMail, buildComposeUrl, COMPOSE_MODES, sendViaApi, isValidEmail } from './shared.js';
 
 const MENU_ROOT = 'qes-root';
@@ -243,6 +244,12 @@ function notify(s, title, message) {
 
 // popup → background 메시지
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'LIST_ALL_MAIL') {
+    listAllMail(msg.account, { folder: msg.folder, page: msg.page })
+      .then((r) => sendResponse({ ok: true, ...r }))
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
   if (msg?.type === 'MARK_ALL_READ') {
     // 팝업은 Gmail 탭이 열리며 닫히므로 결과는 알림으로
     markAllReadViaGmail(msg.account)

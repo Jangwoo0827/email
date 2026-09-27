@@ -126,8 +126,11 @@ async function getIk(account) {
 
 // entry: fetchInbox()의 메일 항목 ({ id: 'tag:gmail.google.com,2004:<10진수>', link: '...message_id=<16진수>...' })
 export async function fetchMessageBody(account, entry) {
-  const dec = (/:(\d+)$/.exec(entry.id) || [])[1];
-  const hex = (/message_id=([0-9a-f]+)/i.exec(entry.link || '') || [])[1] || (dec ? BigInt(dec).toString(16) : '');
+  const hex =
+    entry.hex ||
+    (/message_id=([0-9a-f]+)/i.exec(entry.link || '') || [])[1] ||
+    ((/:(\d+)$/.exec(entry.id || '') || [])[1] ? BigInt(/:(\d+)$/.exec(entry.id)[1]).toString(16) : '');
+  const dec = (/:(\d+)$/.exec(entry.id || '') || [])[1] || (hex ? BigInt(`0x${hex}`).toString() : '');
   if (!dec && !hex) throw new Error('메일 ID를 알 수 없습니다.');
 
   let ik = '';
